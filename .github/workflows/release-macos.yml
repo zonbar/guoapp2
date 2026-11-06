@@ -1,0 +1,100 @@
+name: Release macOS Apple Silicon
+
+on:
+  workflow_dispatch:
+    inputs:
+      all_sources:
+        description: 构建全剧视界（全站源）版，默认短剧视界
+        type: boolean
+        default: false
+      publish_release:
+        description: 构建成功后发布 GitHub Release
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-arm64-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOPROXY: https://proxy.golang.org,direct
+  GOSUMDB: sum.golang.org
+  PYTHONUTF8: '1'
+
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      VARIANT_ARGUMENTS: ${{ inputs.all_sources && '--all-sources' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Apple Silicon runner
+        run: |
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "::error::当前 runner 不是 Apple Silicon"
+            exit 1
+          fi
+          sw_vers
+          xcodebuild -version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - name: Ensure CocoaPods
+        run: command -v pod >/dev/null 2>&1 || sudo gem install cocoapods --no-document
+      - name: Build and package
+        run: python3 scripts/build_macos.py $VARIANT_ARGUMENTS
+      - name: Show artifacts
+        run: |
+          ls -lh dist/macos
+          cat dist/macos/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-packages
+          path: dist/macos/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Read version
+        id: version
+        run: |
+          version=$(sed -n 's/^version:[[:space:]]*\([0-9][^+[:space:]]*\).*/\1/p' pubspec.yaml | head -n 1)
+          if [ -z "$version" ]; then
+            echo 'pubspec.yaml 缺少版本号' >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Publish release
+        if: inputs.publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          tag="v${VERSION}-macos-arm64"
+          notes="dist/macos/RELEASE_NOTES.md"
+          printf '\n构建记录：%s\n' "$RUN_URL" >> "$notes"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes-file "$notes"
+          else
+            gh release create "$tag" \
+              --title "${VERSION} macOS Apple Silicon" \
+              --notes-file "$notes"
+          fi
+          gh release upload "$tag" \
+            dist/macos/*.zip \
+            dist/macos/*.dmg \
+            dist/macos/SHA256SUMS.txt \
+            --clobber
+          gh release view "$tag" --json url,tagName,assets --jq '.url, .tagName, (.assets[].name)'

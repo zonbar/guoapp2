@@ -791,7 +791,16 @@ python3 scripts/build_ios.py --core-only --simulator
 python3 scripts/build_ios.py --export-options /path/to/ExportOptions.plist
 ~~~
 
-产物在 `dist/android`、`dist/windows`、`dist/ios`，短剧视界版以 `duanjushijie-` 开头，全站源版以 `quanjushijie-` 开头；1.0.0 之前的 `hongguojian-` / `zhenguojian-` 只出现在历史记录中。iOS 脚本将 Go 核心生成 XCFramework，再经 CocoaPods 链接并检查 FFI 导出符号；媒体库随应用打包。
+macOS Apple Silicon（arm64）构建需要 Apple Silicon Mac、完整 Xcode、Flutter、Go 与 CocoaPods：
+
+~~~sh
+python3 scripts/build_macos.py
+python3 scripts/build_macos.py --all-sources
+~~~
+
+脚本在缺少 `macos/` Runner 时先用 `flutter create --platforms=macos` 补齐，编译 `libduanju_core.dylib` 并嵌入应用 `Contents/Frameworks`，关闭 App Sandbox、做 ad-hoc 签名，校验 arm64 架构与 FFI 导出符号后生成 ZIP、DMG 和 `SHA256SUMS.txt`。也可以只运行 GitHub Actions 的 `Release macOS Apple Silicon` 工作流，由 `macos-15` arm64 runner 构建并发布 Release。未使用 Developer ID 签名与公证，首次打开需手动解除隔离；依赖移动插件的视频合并、后台下载等功能在 macOS 上不可用。
+
+产物在 `dist/android`、`dist/windows`、`dist/ios`、`dist/macos`，短剧视界版以 `duanjushijie-` 开头，全站源版以 `quanjushijie-` 开头；1.0.0 之前的 `hongguojian-` / `zhenguojian-` 只出现在历史记录中。iOS 脚本将 Go 核心生成 XCFramework，再经 CocoaPods 链接并检查 FFI 导出符号；macOS 脚本生成 dylib 并随应用打包，媒体库同样随应用打包。
 
 首次 Android 调试先编译对应架构核心：
 
