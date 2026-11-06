@@ -178,6 +178,19 @@ func (d *Downloader) resolveProviderMedia(ctx context.Context, task Task) (provi
 		}
 		if chapter.Source == sourceHuangguoAI {
 			media.URL = parseAIVideoURL(body, pageURL)
+			if media.URL == "" {
+				_, sourceID, _ := splitProviderDramaID(task.DramaID)
+				episode := huangguoAIEpisodeNumber(pageURL, chapter, task.Index)
+				playback, err := d.fetchHuangguoAIPlayback(ctx, pageURL, sourceID, episode)
+				if err != nil {
+					return providerMedia{}, err
+				}
+				media.URL = playback.URL
+				if len(playback.CDNHeaders) > 0 {
+					media.credentials = &providerMediaCredentials{cdnHeaders: playback.CDNHeaders}
+					ctx = providerMediaContext(ctx, media.credentials)
+				}
+			}
 		} else {
 			media.URL = parseDataHLS(body, pageURL)
 		}

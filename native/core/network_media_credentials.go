@@ -10,11 +10,12 @@ import (
 )
 
 type providerMediaCredentials struct {
-	cookie    string
-	origin    string
-	referer   string
-	userAgent string
-	expires   time.Time
+	cookie     string
+	origin     string
+	referer    string
+	userAgent  string
+	expires    time.Time
+	cdnHeaders map[string]string
 }
 
 type providerMediaCredentialsKey struct{}
@@ -37,6 +38,12 @@ func providerMediaOrigin(address *url.URL) string {
 
 func (credentials *providerMediaCredentials) apply(request *http.Request) error {
 	request.Header.Del("Cookie")
+	// 站点下发的 CDN 鉴权头只随 HLS 清单请求发送，不带到密钥、分片或无关域名。
+	if len(credentials.cdnHeaders) > 0 && strings.Contains(strings.ToLower(request.URL.Path), ".m3u8") {
+		for name, value := range credentials.cdnHeaders {
+			request.Header.Set(name, value)
+		}
+	}
 	if credentials.userAgent != "" {
 		request.Header.Set("User-Agent", credentials.userAgent)
 	}
