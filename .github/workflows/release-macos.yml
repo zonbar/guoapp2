@@ -85,15 +85,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ALL_SOURCES: ${{ (inputs.all_sources == true || inputs.all_sources == 'true') && 'true' || 'false' }}
         run: |
-          tag="v${VERSION}-macos-arm64"
+          suffix=''
+          title="${VERSION} macOS Apple Silicon"
+          if [ "$ALL_SOURCES" = 'true' ]; then
+            suffix='-all-sources'
+            title="${VERSION} 全剧视界 macOS Apple Silicon"
+          fi
+          tag="v${VERSION}-macos-arm64${suffix}"
           notes="dist/macos/RELEASE_NOTES.md"
           printf '\n构建记录：%s\n' "$RUN_URL" >> "$notes"
+          if [ "$ALL_SOURCES" = 'true' ]; then
+            printf '\n同版本的短剧视界（仅红果）版：%s/releases/tag/v%s-macos-arm64\n' \
+              "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" "$VERSION" >> "$notes"
+          fi
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" --notes-file "$notes"
           else
             gh release create "$tag" \
-              --title "${VERSION} macOS Apple Silicon" \
+              --title "$title" \
               --notes-file "$notes"
           fi
           gh release upload "$tag" \

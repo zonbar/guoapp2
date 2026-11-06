@@ -798,7 +798,7 @@ python3 scripts/build_macos.py
 python3 scripts/build_macos.py --all-sources
 ~~~
 
-脚本在缺少 `macos/` Runner 时先用 `flutter create --platforms=macos` 补齐，编译 `libduanju_core.dylib` 并嵌入应用 `Contents/Frameworks`，关闭 App Sandbox、做 ad-hoc 签名，校验 arm64 架构与 FFI 导出符号后生成 ZIP、DMG 和 `SHA256SUMS.txt`。也可以只运行 GitHub Actions 的 `Release macOS Apple Silicon` 工作流，由 `macos-15` arm64 runner 构建并发布 Release。未使用 Developer ID 签名与公证，首次打开需手动解除隔离；依赖移动插件的视频合并、后台下载等功能在 macOS 上不可用。
+脚本在缺少 `macos/` Runner 时先用 `flutter create --platforms=macos` 补齐，编译 `libduanju_core.dylib` 并嵌入应用 `Contents/Frameworks`，关闭 App Sandbox、做 ad-hoc 签名，校验 arm64 架构与 FFI 导出符号后生成 ZIP、DMG 和 `SHA256SUMS.txt`。也可以只运行 GitHub Actions 的 `Release macOS Apple Silicon` 工作流，由 arm64 macOS runner 构建并发布 Release：默认短剧视界版发布到 `v<版本>-macos-arm64`，勾选 `all_sources` 的全剧视界版发布到 `v<版本>-macos-arm64-all-sources`，两个变体各自带完整的 `SHA256SUMS.txt` 与发布说明。未使用 Developer ID 签名与公证，首次打开需手动解除隔离；后台下载、画质增强等移动端 / Windows 专属功能未在 macOS 上做完整适配。
 
 产物在 `dist/android`、`dist/windows`、`dist/ios`、`dist/macos`，短剧视界版以 `duanjushijie-` 开头，全站源版以 `quanjushijie-` 开头；1.0.0 之前的 `hongguojian-` / `zhenguojian-` 只出现在历史记录中。iOS 脚本将 Go 核心生成 XCFramework，再经 CocoaPods 链接并检查 FFI 导出符号；macOS 脚本生成 dylib 并随应用打包，媒体库同样随应用打包。
 
