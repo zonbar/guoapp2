@@ -29,7 +29,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     env:
-      VARIANT_ARGUMENTS: ${{ inputs.all_sources && '--all-sources' || '' }}
+      VARIANT_ARGUMENTS: ${{ (inputs.all_sources == true || inputs.all_sources == 'true') && '--all-sources' || '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Verify Apple Silicon runner
@@ -76,7 +76,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Publish release
-        if: inputs.publish_release
+        if: ${{ inputs.publish_release == true || inputs.publish_release == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
