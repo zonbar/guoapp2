@@ -131,8 +131,9 @@ def write_notes(variant, version, archive_path, image_path):
         '## 已知限制',
         '',
         '- 站源请求、浏览与播放由设备端 Go 核心提供，已随应用打包 `libduanju_core.dylib`。',
-        '- 视频合并依赖的 FFmpeg 移动插件、后台下载服务等只有 Android / iOS 实现，macOS 上不可用。',
-        '- 画质增强入口仅 Windows 开放，macOS 不显示。',
+        '- 应用主程序是 arm64 / x86_64 通用二进制，但内置 Go 核心库仅 arm64，请勿在 Intel Mac 上使用。',
+        '- 后台下载、画质增强等移动端 / Windows 专属功能未在 macOS 上做完整适配。',
+        '- 视频合并等依赖原生插件的能力未在 macOS 版上做完整验证。',
         '- 未签名的应用在系统升级后可能需要重新执行解除隔离命令。',
         '',
     ]
