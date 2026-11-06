@@ -11,13 +11,17 @@ on:
         description: 构建成功后发布 GitHub Release
         type: boolean
         default: true
+      runner_label:
+        description: macOS runner 镜像
+        type: choice
+        options:
+          - macos-15
+          - macos-26
+          - macos-latest
+        default: macos-15
 
 permissions:
   contents: write
-
-concurrency:
-  group: macos-arm64-release-${{ github.ref }}
-  cancel-in-progress: false
 
 env:
   GOPROXY: https://proxy.golang.org,direct
@@ -26,7 +30,7 @@ env:
 
 jobs:
   macos-arm64:
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner_label || 'macos-15' }}
     timeout-minutes: 90
     env:
       VARIANT_ARGUMENTS: ${{ (inputs.all_sources == true || inputs.all_sources == 'true') && '--all-sources' || '' }}
