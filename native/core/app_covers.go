@@ -24,6 +24,10 @@ const nativeCoverMaxBytes = 20 << 20
 const nativeCoverCacheBytes = 256 << 20
 const nativeCoverCacheEntries = 2000
 const nativeCoverTTL = 30 * 24 * time.Hour
+const nativeCoverFailureThreshold = 3
+const nativeCoverBlockDuration = 2 * time.Minute
+
+var errNativeCoverBlocked = errors.New("海报站点暂时不可达，已跳过重复请求")
 
 type nativeCoverEntry struct {
 	size      int64
@@ -48,6 +52,9 @@ type nativeCoverCache struct {
 	repairs     map[string]*nativeCoverRepair
 	size        int64
 	limit       int64
+	rootCtx     context.Context
+	failures    map[string]int
+	blocked     map[string]time.Time
 }
 
 func newNativeCoverCache(directory string, downloader *Downloader) *nativeCoverCache {
@@ -56,6 +63,7 @@ func newNativeCoverCache(directory string, downloader *Downloader) *nativeCoverC
 		entries: map[string]nativeCoverEntry{}, pending: map[string]*nativeCoverCall{},
 		slots: make(chan struct{}, 4), limit: nativeCoverCacheBytes,
 		repairSlots: make(chan struct{}, 1), repairs: map[string]*nativeCoverRepair{},
+		failures: map[string]int{}, blocked: map[string]time.Time{},
 	}
 	files, _ := os.ReadDir(cache.directory)
 	for _, file := range files {
@@ -160,16 +168,22 @@ func (cache *nativeCoverCache) loadAddress(ctx context.Context, drama nativeDram
 }
 
 func (cache *nativeCoverCache) fetch(key string, drama nativeDrama, referer, fallback string, call *nativeCoverCall) {
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer cancel()
+	host := nativeCoverHost(drama.Cover)
 	var data []byte
 	var err error
-	select {
-	case cache.slots <- struct{}{}:
-		data, err = cache.download(ctx, drama.Cover, referer)
-		<-cache.slots
-	case <-ctx.Done():
-		err = ctx.Err()
+	if cache.coverHostBlocked(host) {
+		err = errNativeCoverBlocked
+	} else {
+		ctx, cancel := context.WithTimeout(cache.coverContext(), 25*time.Second)
+		defer cancel()
+		select {
+		case cache.slots <- struct{}{}:
+			data, err = cache.download(ctx, drama.Cover, referer)
+			<-cache.slots
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+		cache.observeCoverResult(host, err == nil)
 	}
 	path := filepath.Join(cache.directory, key+".img")
 	cache.mu.Lock()
@@ -193,8 +207,51 @@ func (cache *nativeCoverCache) fetch(key string, drama nativeDrama, referer, fal
 	call.err = err
 	delete(cache.pending, key)
 	close(call.done)
-	if err != nil {
+	if err != nil && !errors.Is(err, errNativeCoverBlocked) {
 		cache.downloader.recordDiagnostic(diagnosticEvent{Event: "cover_failed", Source: drama.Source, DramaID: drama.ID, Message: err.Error()})
+	}
+}
+
+func nativeCoverHost(address string) string {
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname())
+}
+
+func (cache *nativeCoverCache) coverContext() context.Context {
+	if cache.rootCtx != nil {
+		return cache.rootCtx
+	}
+	return context.Background()
+}
+
+// coverHostBlocked 在某一海报域名连续失败后直接跳过请求，避免每个请求都等连接超时，
+// 把仅有的几个并发槽长期占满并拖住整个应用。
+func (cache *nativeCoverCache) coverHostBlocked(host string) bool {
+	if host == "" {
+		return false
+	}
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	return time.Now().Before(cache.blocked[host])
+}
+
+func (cache *nativeCoverCache) observeCoverResult(host string, ok bool) {
+	if host == "" {
+		return
+	}
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if ok {
+		delete(cache.failures, host)
+		delete(cache.blocked, host)
+		return
+	}
+	cache.failures[host]++
+	if cache.failures[host] >= nativeCoverFailureThreshold {
+		cache.blocked[host] = time.Now().Add(nativeCoverBlockDuration)
 	}
 }
 

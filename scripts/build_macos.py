@@ -15,6 +15,32 @@ macos_directory = root / 'macos'
 output = root / 'dist' / 'macos'
 product_name = 'DuanjuApp'
 
+# 关闭窗口会触发退出。界面引擎的优雅关闭要等待仍在跑的 isolate，
+# 站源/海报请求超时时主线程会一直卡在 NSApplication terminate:。
+# 这里只向模板追加退出方法，保留模板原有的入口标记与插件注册。
+MACOS_TERMINATION_METHODS = '''
+  // 退出前先让 Go 核心取消在途请求并落盘，然后直接结束进程。
+  override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    stopNativeCore()
+    exit(0)
+  }
+
+  private func stopNativeCore() {
+    let path = Bundle.main.bundlePath + "/Contents/Frameworks/libduanju_core.dylib"
+    guard let handle = dlopen(path, RTLD_NOW) else { return }
+    typealias RequestFunction = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+    typealias FreeFunction = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
+    guard let requestSymbol = dlsym(handle, "DuanjuRequest"),
+          let freeSymbol = dlsym(handle, "DuanjuFree") else { return }
+    let request = unsafeBitCast(requestSymbol, to: RequestFunction.self)
+    let free = unsafeBitCast(freeSymbol, to: FreeFunction.self)
+    let payload = #"{"action":"shutdown"}"#
+    if let result = payload.withCString({ request($0) }) {
+      free(result)
+    }
+  }
+'''
+
 
 def run(arguments, **kwargs):
     subprocess.run(arguments, cwd=kwargs.pop('cwd', root), check=True, **kwargs)
@@ -24,6 +50,18 @@ def configure_runner(flutter, variant):
     if not (macos_directory / 'Runner.xcodeproj').is_dir():
         run([flutter, 'create', '--platforms=macos', '--project-name', 'duanju_app',
              '--org', 'com.duanju', '--no-pub', str(root)])
+    app_delegate_path = macos_directory / 'Runner' / 'AppDelegate.swift'
+    template = app_delegate_path.read_text(encoding='utf-8')
+    if 'applicationShouldTerminate(' not in template:
+        body = template.rstrip()
+        closing = body.rfind('}')
+        if closing < 0:
+            raise SystemExit('macOS AppDelegate.swift 结构不符合预期')
+        patched = body[:closing] + MACOS_TERMINATION_METHODS + body[closing:] + '\n'
+        if 'import Darwin' not in patched:
+            patched = patched.replace('import FlutterMacOS',
+                                      'import FlutterMacOS\nimport Darwin', 1)
+        app_delegate_path.write_text(patched, encoding='utf-8')
     info_path = macos_directory / 'Runner' / 'Info.plist'
     info = plistlib.loads(info_path.read_bytes())
     info['CFBundleDisplayName'] = variant.name
@@ -132,6 +170,8 @@ def write_notes(variant, version, archive_path, image_path):
         '',
         '- 切换代理模式或代理地址时清除站源请求的 403 退避，并唤醒等待中的请求，避免沿用旧网络出口下的失败结论。',
         '- 用户主动发起的站源健康检测强制重新发起请求，不再被上一次失败留下的退避拦截；后台更新仍受限流约束。',
+        '- 修复点关闭窗口或退出时卡死：退出前取消所有在途站源/海报请求并落盘，再结束进程，不再等待界面引擎的优雅关闭。',
+        '- 海报域名连续请求失败后临时跳过，避免连接超时占满并发槽导致界面无响应；强退遗留的「更新中」状态会在退出时清除。',
         '',
         '## 已知限制',
         '',

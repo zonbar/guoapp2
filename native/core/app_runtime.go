@@ -168,6 +168,8 @@ type nativeEngine struct {
 	playbackMu       sync.Mutex
 	playbackSequence int64
 	playbackCancel   context.CancelFunc
+	rootCtx          context.Context
+	rootCancel       context.CancelFunc
 	sourceTasks      map[string]*nativeSourceTask
 	sourceRecords    map[string]nativeSourceRecord
 	sourceCatalogMu  sync.Mutex
@@ -272,11 +274,13 @@ func newNativeEngine(directory string) (*nativeEngine, error) {
 			return nil
 		}}
 	engine := &nativeEngine{downloader: d, directory: directory, catalogs: map[string][]nativeDrama{}, catalogStates: map[string]nativeCatalogState{}}
+	engine.rootCtx, engine.rootCancel = context.WithCancel(context.Background())
 	engine.loadResourceSettings()
 	d.loadRankingCache()
 	engine.loadCatalogCache()
 	engine.loadSourceRecords()
 	engine.covers = newNativeCoverCache(directory, d)
+	engine.covers.rootCtx = engine.rootCtx
 	engine.downloads = newNativeDownloads(engine)
 	return engine, nil
 }
@@ -334,6 +338,16 @@ func NativeRequest(raw string) (result string) {
 }
 
 func nativeDispatch(input nativeInput) (any, error) {
+	// 应用退出前先取消在途请求并落盘，避免原生调用还挂在 isolate 里导致进程无法结束。
+	if input.Action == "shutdown" {
+		nativeState.Lock()
+		engine := nativeState.engine
+		nativeState.Unlock()
+		if engine != nil {
+			engine.shutdown()
+		}
+		return map[string]any{"stopped": true}, nil
+	}
 	if err := nativeAuthorizeInput(input); err != nil {
 		return nil, err
 	}
@@ -363,7 +377,7 @@ func nativeDispatch(input nativeInput) (any, error) {
 	} else if input.Action == "preload" {
 		duration = 15 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	ctx, cancel := context.WithTimeout(engine.requestRootContext(), duration)
 	defer cancel()
 	if input.Action == "danmaku" || input.Action == "preload" || input.Action == "prepareHandoff" || input.Session != "" && (input.Action == "catalog" || input.Action == "categories" || input.Action == "suggestions" || input.Action == "recommendations" || input.Action == "metadata") {
 		work, finish, err := engine.beginRead(ctx, input)
