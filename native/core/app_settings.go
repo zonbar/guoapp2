@@ -125,8 +125,20 @@ func (engine *nativeEngine) applyResourceSettings(settings nativeResourceSetting
 	router := engine.downloader.proxyRouter
 	manual, _ := url.Parse(settings.ProxyURL)
 	router.mu.Lock()
+	previousMode, previousManual := router.mode, router.manual
 	router.mode, router.manual = settings.ProxyMode, manual
 	router.mu.Unlock()
+	previousURL, currentURL := "", ""
+	if previousManual != nil {
+		previousURL = previousManual.String()
+	}
+	if manual != nil {
+		currentURL = manual.String()
+	}
+	// 出口变了，上一次代理下拿到的 403 退避不再适用，否则切换代理后仍会读旧结论。
+	if previousMode != settings.ProxyMode || previousURL != currentURL {
+		engine.downloader.limiter.clearBackoffs()
+	}
 	limiter := engine.downloader.limiter
 	limiter.mu.Lock()
 	limiter.concurrency = settings.CatalogConcurrency

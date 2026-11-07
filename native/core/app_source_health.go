@@ -55,6 +55,8 @@ func (engine *nativeEngine) checkSource(ctx context.Context, source string, sele
 	report := nativeSourceHealth{CheckedAt: time.Now(), State: "checking", Steps: []nativeHealthStep{}}
 	trace := &sourceResponseTrace{}
 	ctx = context.WithValue(ctx, sourceTraceKey{}, trace)
+	// 用户主动发起的检测必须真实发出请求，不能被上一次失败留下的退避直接挡回。
+	ctx = context.WithValue(ctx, forceRefreshKey{}, true)
 	publish := func() {
 		copy := report
 		copy.Steps = append([]nativeHealthStep{}, report.Steps...)

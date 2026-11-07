@@ -91,6 +91,9 @@ type requestLimiter struct {
 
 type backgroundCatalogKey struct{}
 
+// forceRefreshKey 标记用户主动触发的站源检测，绕开内存中尚未过期的请求退避。
+type forceRefreshKey struct{}
+
 func newRequestLimiter(concurrency int, interval time.Duration) *requestLimiter {
 	if concurrency < 1 {
 		concurrency = 1
@@ -103,8 +106,18 @@ func (limiter *requestLimiter) notifyLocked() {
 	limiter.changed = make(chan struct{})
 }
 
+// clearBackoffs 在网络出口变化后丢弃旧的限流结论，并唤醒正在等待的请求。
+func (limiter *requestLimiter) clearBackoffs() {
+	limiter.mu.Lock()
+	limiter.backoffs = map[string]*requestBackoff{}
+	limiter.backgroundBackoffs = map[string]*requestBackoff{}
+	limiter.notifyLocked()
+	limiter.mu.Unlock()
+}
+
 func (limiter *requestLimiter) acquire(ctx context.Context, request *http.Request) (func(), error) {
 	background, _ := ctx.Value(backgroundCatalogKey{}).(bool)
+	forceRefresh, _ := ctx.Value(forceRefreshKey{}).(bool)
 	host := strings.ToLower(request.URL.Hostname())
 	source := providerSourceForURL(request.URL.String())
 	if source == "" {
@@ -134,13 +147,15 @@ func (limiter *requestLimiter) acquire(ctx context.Context, request *http.Reques
 			return nil, err
 		}
 		limiter.mu.Lock()
-		if backoff := limiter.backoffs[host]; backoff != nil && time.Now().Before(backoff.until) {
-			limiter.mu.Unlock()
-			return nil, backoff
-		}
-		if backoff := limiter.backgroundBackoffs[host]; background && backoff != nil && time.Now().Before(backoff.until) {
-			limiter.mu.Unlock()
-			return nil, backoff
+		if !forceRefresh {
+			if backoff := limiter.backoffs[host]; backoff != nil && time.Now().Before(backoff.until) {
+				limiter.mu.Unlock()
+				return nil, backoff
+			}
+			if backoff := limiter.backgroundBackoffs[host]; background && backoff != nil && time.Now().Before(backoff.until) {
+				limiter.mu.Unlock()
+				return nil, backoff
+			}
 		}
 		delay := time.Until(gate.lastStart.Add(limiter.interval))
 		if background {
