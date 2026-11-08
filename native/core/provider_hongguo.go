@@ -212,11 +212,19 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
+	// 播放页 SSR 会脱敏受保护分集的地址，改走网页播放器自己使用的公开回退接口。
+	media, publicErr := d.resolveHongguoPublicFallback(ctx, seriesID, videoID)
+	if publicErr == nil {
+		return media, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
 	media, apiErr := d.resolveHongguoPlaybackAPI(ctx, seriesID, videoID)
 	if apiErr == nil {
 		return media, nil
 	}
-	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v；网页取流失败：%v；备用取流失败：%w", publicError(nativeErr), publicError(pageErr), apiErr)
+	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v；网页取流失败：%v；公开回退取流失败：%v；备用取流失败：%w", publicError(nativeErr), publicError(pageErr), publicError(publicErr), apiErr)
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
@@ -232,13 +240,13 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 	info, _ := page["video_player_info"].(map[string]any)
 	addresses := hongguoMediaAddresses(info)
 	if len(addresses) == 0 {
-		// 新版播放页用 protectedPlayback 标记受保护分集：页面可达、vid 也匹配，
-		// 但站点只下发 protectedPlayback=true 与空 videoList，不提供公开地址。
-		// 区分这种情况，避免把站点授权限制误报成解析失败。
+		// 新版播放页会在服务端脱敏：受保护分集只下发 protectedPlayback=true
+		// 与空 videoList。播放器实际另调公开回退接口取址，因此这里只说明页面
+		// 不含地址，由上层继续尝试公开回退，不能据此判定整集不可播。
 		if protected, _ := page["protectedPlayback"].(bool); protected {
-			return providerMedia{}, errors.New("红果该集被站点标记为受保护内容，网页不提供公开播放地址（需登录或 App 授权）；不会将试看集冒充该集下载")
+			return providerMedia{}, errors.New("红果播放页已脱敏该集地址（受保护内容），需改由网页公开回退接口取流；不会将试看集冒充该集下载")
 		}
-		return providerMedia{}, errors.New("红果该集未提供公开播放地址，可能需要登录或 App 授权；不会将试看集冒充该集下载")
+		return providerMedia{}, errors.New("红果播放页未提供公开播放地址，需改由网页公开回退接口取流；不会将试看集冒充该集下载")
 	}
 	duration, _ := strconv.ParseFloat(mapString(info, "duration"), 64)
 	media := providerMedia{URL: addresses[0], Referer: d.providerBaseURL(sourceHongguo) + "/", Duration: time.Duration(duration * float64(time.Second))}

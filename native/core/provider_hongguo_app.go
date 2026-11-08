@@ -218,8 +218,13 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			}
 			continue
 		}
-		if len(content) == 0 || len(content) > providerMaxBodyBytes {
-			return nil, errors.New("红果 App 接口未返回有效数据")
+		if len(content) == 0 {
+			// 站点网关对未通过风控的 App 请求会返回 HTTP 200 + Content-Length: 0，
+			// 直连与代理一致，且目录/详情/取流接口都如此，属于服务端静默拒绝。
+			return nil, errors.New("红果 App 接口返回空响应（站点风控静默拒绝）")
+		}
+		if len(content) > providerMaxBodyBytes {
+			return nil, errors.New("红果 App 接口返回数据过大")
 		}
 		var result map[string]any
 		decoder := json.NewDecoder(bytes.NewReader(content))

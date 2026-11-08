@@ -94,6 +94,10 @@ type backgroundCatalogKey struct{}
 // forceRefreshKey 标记用户主动触发的站源检测，绕开内存中尚未过期的请求退避。
 type forceRefreshKey struct{}
 
+// skipBackoffObserveKey 标记「业务级授权结果」而非站点封锁。典型场景是按集取流时
+// 站点对未授权分集返回 403，这类响应不应让同一站点的目录、封面等请求一起进入退避。
+type skipBackoffObserveKey struct{}
+
 func newRequestLimiter(concurrency int, interval time.Duration) *requestLimiter {
 	if concurrency < 1 {
 		concurrency = 1
@@ -205,6 +209,12 @@ func (limiter *requestLimiter) acquire(ctx context.Context, request *http.Reques
 }
 
 func (limiter *requestLimiter) observe(request *http.Request, response *http.Response) {
+	if request == nil || request.Context() == nil {
+		return
+	}
+	if skip, _ := request.Context().Value(skipBackoffObserveKey{}).(bool); skip {
+		return
+	}
 	if response.StatusCode != http.StatusForbidden && response.StatusCode != http.StatusTooManyRequests && !strings.EqualFold(response.Header.Get("Cf-Mitigated"), "challenge") {
 		return
 	}
