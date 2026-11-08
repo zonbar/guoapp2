@@ -214,6 +214,7 @@ class _ResourceSettingsScreenState extends State<ResourceSettingsScreen> {
                       DropdownMenuItem(value: 'auto', child: Text('自动')),
                       DropdownMenuItem(value: 'direct', child: Text('直连')),
                       DropdownMenuItem(value: 'manual', child: Text('手动代理')),
+                      DropdownMenuItem(value: 'split', child: Text('分流（推荐）')),
                     ],
                     onChanged: _busy
                         ? null
@@ -228,7 +229,14 @@ class _ResourceSettingsScreenState extends State<ResourceSettingsScreen> {
                             : _settings!.systemProxyStatus,
                       ),
                     ),
-                  if (_mode == 'manual')
+                  if (_mode == 'split')
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        '仅黄果视频、黄果 AI、帝果等需要代理的域名走代理，其余站点直连；避免国内站点因代理出口被拦截。',
+                      ),
+                    ),
+                  if (_mode == 'manual' || _mode == 'split')
                     Padding(
                       padding: const EdgeInsets.only(top: 16),
                       child: TextField(

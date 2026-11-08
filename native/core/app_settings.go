@@ -34,10 +34,14 @@ func (settings nativeResourceSettings) validate() error {
 		settings.DownloadConcurrency < 1 || settings.DownloadConcurrency > 6 {
 		return errors.New("并发应为 1 至 6，请求间隔应为 0 至 5000 毫秒")
 	}
-	if settings.ProxyMode != "auto" && settings.ProxyMode != "direct" && settings.ProxyMode != "manual" {
+	if settings.ProxyMode != "auto" && settings.ProxyMode != "direct" && settings.ProxyMode != "manual" && settings.ProxyMode != "split" {
 		return errors.New("代理模式无效")
 	}
-	if settings.ProxyMode == "manual" || settings.ProxyURL != "" {
+	needsProxyURL := settings.ProxyMode == "manual" || settings.ProxyMode == "split"
+	if needsProxyURL && settings.ProxyURL == "" {
+		return errors.New("请输入代理地址")
+	}
+	if needsProxyURL || settings.ProxyURL != "" {
 		if len(settings.ProxyURL) > 2048 {
 			return errors.New("代理地址过长")
 		}
@@ -78,6 +82,12 @@ func (router *proxyRouter) proxy(request *http.Request) (*url.URL, error) {
 		return nil, nil
 	case "manual":
 		return manual, nil
+	case "split":
+		// 只有确需代理的域名走手动代理，其余站点保持直连，避免出口 IP 触发风控。
+		if manual != nil && shouldUseSplitProxy(request.URL.Hostname()) {
+			return manual, nil
+		}
+		return nil, nil
 	}
 	return router.systemSettings().resolve(request)
 }
