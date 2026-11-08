@@ -127,19 +127,40 @@ func (engine *nativeEngine) checkSource(ctx context.Context, source string, sele
 			}
 		}
 	}
+	// 部分源的单部剧可能全部为付费分集（如帝果），只测第一部会把「选中的剧
+	// 没有免费集」误判为整站不可用。检测时最多再试三部非 VIP 剧目。
+	candidates := []nativeDrama{drama}
+	for _, item := range page.Items {
+		if item.ID == drama.ID || (item.VIP != nil && *item.VIP) {
+			continue
+		}
+		candidates = append(candidates, item)
+		if len(candidates) >= 4 {
+			break
+		}
+	}
 	report.Sample = drama.Title
 	var chapter Chapter
 	if !run("分集目录", func() (string, error) {
-		_, id, _ := splitProviderDramaID(drama.ID)
-		_, chapters, err := engine.downloader.GetHuangguoChapters(ctx, source, id)
-		if err != nil {
-			return "", err
-		}
-		for _, item := range chapters {
-			if !item.VIP {
-				chapter = item
-				return fmt.Sprintf("%d 集，检测第 %s 集", len(chapters), item.EpisodeString(1)), nil
+		var lastErr error
+		for _, candidate := range candidates {
+			_, id, _ := splitProviderDramaID(candidate.ID)
+			_, chapters, err := engine.downloader.GetHuangguoChapters(ctx, source, id)
+			if err != nil {
+				lastErr = err
+				continue
 			}
+			for _, item := range chapters {
+				if !item.VIP {
+					drama, chapter = candidate, item
+					report.Sample = drama.Title
+					return fmt.Sprintf("%d 集，检测第 %s 集", len(chapters), item.EpisodeString(1)), nil
+				}
+			}
+			lastErr = errors.New("没有可用于检测的免费分集")
+		}
+		if lastErr != nil {
+			return "", lastErr
 		}
 		return "", errors.New("没有可用于检测的免费分集")
 	}) {
@@ -148,13 +169,16 @@ func (engine *nativeEngine) checkSource(ctx context.Context, source string, sele
 	var media providerMedia
 	var keyURL, segmentURL string
 	if !run("播放地址与播放列表", func() (string, error) {
+		// 解析接口偶尔会挂死到分钟级，给这一步一个总预算，避免单次检测长时间卡住。
+		probeCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		defer cancel()
 		var err error
-		media, err = engine.downloader.resolveProviderMedia(ctx, Task{DramaID: drama.ID, Chapter: chapter, Index: 1})
+		media, err = engine.downloader.resolveProviderMedia(probeCtx, Task{DramaID: drama.ID, Chapter: chapter, Index: 1})
 		if err != nil {
 			return "", err
 		}
 		ctx = providerMediaContext(ctx, media.credentials)
-		keyURL, segmentURL, err = engine.downloader.sourceProbeResources(ctx, media)
+		keyURL, segmentURL, err = engine.downloader.sourceProbeResources(probeCtx, media)
 		return "已取得可识别的播放地址", err
 	}) {
 		return failure
@@ -260,6 +284,15 @@ func (d *Downloader) sourceProbeBytes(ctx context.Context, address, referer stri
 		request.Header.Set("Range", "bytes=0-1023")
 	}
 	response, err := d.doMediaRequest(request)
+	if err != nil && isTransientNetworkError(err) && ctx.Err() == nil {
+		// CDN 连接重置 / EOF 常为瞬时抖动，在剩余预算内重放一次；
+		// 重试失败时保留原始错误，避免把超时覆盖成无意义的 context canceled。
+		if retryResponse, retryErr := d.doMediaRequest(request.Clone(ctx)); retryErr == nil {
+			response, err = retryResponse, nil
+		} else if retryResponse != nil && retryResponse.Body != nil {
+			retryResponse.Body.Close()
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

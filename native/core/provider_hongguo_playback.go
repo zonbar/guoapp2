@@ -52,6 +52,11 @@ func (d *Downloader) resolveHongguoPlaybackAPI(ctx context.Context, seriesID, vi
 	query := url.Values{"id": {base64.StdEncoding.EncodeToString(reference)}}
 	body, err := d.fetchProviderText(ctx, hongguoPlaybackAPI+"?"+query.Encode(), hongguoBaseURL+"/")
 	if err != nil {
+		// 该接口服务端会拒绝所有 ALPN 组合（含空列表），客户端无法完成 TLS 协商。
+		// 直接给出可读结论，不必把底层 TLS 告警抛给用户。
+		if classifyTLSError(err) == tlsFallbackHTTP1 {
+			return providerMedia{}, errors.New("红果备用播放接口当前拒绝 TLS 协商，线路暂不可用")
+		}
 		return providerMedia{}, err
 	}
 	decoded, err := decodeHongguoPlaybackResponse(body)

@@ -9,6 +9,11 @@ var splitProxyHosts = []string{
 	"huangguo.video",
 	"huangguoai.com",
 	"dsd.com.se",
+	// 野果线路域名由中转页动态下发，直连会被连接重置，只有经代理可取到接口脚本。
+	"buxefaex.cc",
+	"fzchosdi.cc",
+	// 花果/网果等共用的媒体分片域名，直连稳定超时，经代理可正常返回 206。
+	"adfg8.vip",
 }
 
 func shouldUseSplitProxy(host string) bool {
