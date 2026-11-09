@@ -252,12 +252,15 @@ class Episode {
       number = intValue(raw['currentEpisode']) > 0
           ? intValue(raw['currentEpisode'])
           : fallback,
-      vip = raw['vip'] == true;
+      vip = raw['vip'] == true,
+      locked = raw['locked'] == true;
   final Map<String, dynamic> raw;
   final String id;
   final String title;
   final int number;
   final bool vip;
+  // 站点明确不向网页端开放该集公开地址；仅用于选集界面提示，不影响播放。
+  final bool locked;
 }
 
 class DramaDetail {

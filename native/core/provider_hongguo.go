@@ -160,6 +160,9 @@ func (d *Downloader) fetchHongguoWebChapters(ctx context.Context, sourceID strin
 	}
 	title := firstNonEmpty(mapString(detail, "series_name", "series_title", "name"), sourceID)
 	vids := anyList(detail["vid_list"])
+	// 站点在详情页明确声明网页端可公开播放的集数；实测登录账号也不改变这个边界。
+	// 把这个范围带到选集界面，避免用户对锁定集反复发起注定失败的下载。
+	accessible := hongguoAccessibleEpisodes(map[string]any{"seriesDetail": detail})
 	chapters := make([]Chapter, 0, len(vids))
 	for i, v := range vids {
 		vid := strings.TrimSpace(fmt.Sprint(v))
@@ -167,7 +170,7 @@ func (d *Downloader) fetchHongguoWebChapters(ctx context.Context, sourceID strin
 			continue
 		}
 		idx := i + 1
-		chapters = append(chapters, Chapter{ID: providerChapterID(sourceHongguo, sourceID, vid), Source: sourceHongguo, Title: fmt.Sprintf("第%d集", idx), VideoURL: "hongguo-cenc://" + vid, CurrentEpisode: rawEpisode(idx)})
+		chapters = append(chapters, Chapter{ID: providerChapterID(sourceHongguo, sourceID, vid), Source: sourceHongguo, Title: fmt.Sprintf("第%d集", idx), VideoURL: "hongguo-cenc://" + vid, CurrentEpisode: rawEpisode(idx), Locked: accessible > 0 && idx > accessible})
 	}
 	if len(chapters) == 0 {
 		return title, nil, errors.New("红果详情没有返回剧集 ID")
@@ -221,7 +224,7 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if errors.Is(publicErr, errHongguoPublicEpisodeUnavailable) {
 		// 403 public_fallback_unavailable 是站点对该集的明确授权拒绝，
 		// 不是线路故障；不要再拼出四条混杂的失败原因误导用户。
-		return providerMedia{}, fmt.Errorf("红果该集未在站点开放公开播放，需登录后观看；站点仅向游客开放部分分集的公开直链，App 网关与备用线路无法绕过站点授权；不会用试看集冒充该集下载")
+		return providerMedia{}, fmt.Errorf("红果该集未在网页端开放公开播放；站点仅开放前若干集的网页直链，登录账号也不解除该限制，其余分集需在官方 App 观看；App 网关与备用线路无法绕过站点授权；不会用试看集冒充该集下载")
 	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err

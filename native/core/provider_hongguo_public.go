@@ -18,12 +18,12 @@ import (
 // 403 public_fallback_unavailable。此前只解析 SSR 页面，会把它误判成完全不可播。
 const hongguoPublicFallbackPath = "/api/video/protected/fallback-play-info"
 
-var errHongguoPublicEpisodeUnavailable = errors.New("该集未在站点开放公开播放，需登录或 App 授权")
+var errHongguoPublicEpisodeUnavailable = errors.New("该集未在红果网页端开放公开播放；登录账号也不解除该限制")
 
 // errHongguoEpisodeLocked 表示站点已明确判定该集对游客锁定：播放页会 302 到
 // 另一集（试看集）并附加 pc_locked_episode=<原 vid>。这是确定的授权边界，
 // 不是线路故障，继续尝试 App 网关或备用域名只会白等并给出误导性的混合报错。
-var errHongguoEpisodeLocked = errors.New("红果该集需登录后观看")
+var errHongguoEpisodeLocked = errors.New("红果该集在网页端被站点锁定")
 
 // hongguoEpisodeLockedError 携带站点声明的游客可看集数，用于把「前 N 集可下」
 // 这个真实边界明确告诉用户。
@@ -33,9 +33,9 @@ type hongguoEpisodeLockedError struct {
 
 func (e *hongguoEpisodeLockedError) Error() string {
 	if e.accessible > 0 {
-		return fmt.Sprintf("红果该站仅向游客开放前 %d 集，当前请求的集需登录后观看；网页已把请求重定向到试看集，不会用试看集冒充该集下载", e.accessible)
+		return fmt.Sprintf("红果网页端仅开放前 %d 集的公开直链，该集需在官方 App 观看（登录账号不解除网页端限制）；网页已把请求重定向到试看集，不会用试看集冒充该集下载", e.accessible)
 	}
-	return "红果当前请求的集需登录后观看；网页已把请求重定向到试看集，不会用试看集冒充该集下载"
+	return "红果该集未在网页端开放公开播放，需在官方 App 观看（登录账号不解除网页端限制）；网页已把请求重定向到试看集，不会用试看集冒充该集下载"
 }
 
 func (e *hongguoEpisodeLockedError) Unwrap() error { return errHongguoEpisodeLocked }

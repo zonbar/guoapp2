@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -264,8 +265,8 @@ func TestHongguoPublicFallbackForbiddenGivesPreciseDiagnosis(t *testing.T) {
 		Chapter: Chapter{Source: sourceHongguo, VideoURL: "hongguo-cenc://" + hongguoPublicTestVideo},
 	}
 	_, err := d.resolveHongguoMedia(context.Background(), task)
-	if err == nil || !strings.Contains(err.Error(), "需登录后观看") {
-		t.Fatalf("err = %v, want 明确的登录授权诊断", err)
+	if err == nil || !strings.Contains(err.Error(), "登录账号也不解除") {
+		t.Fatalf("err = %v, want 明确的网页端授权边界诊断", err)
 	}
 	if strings.Contains(err.Error(), "备用取流失败") || strings.Contains(err.Error(), "App 取流失败") {
 		t.Fatalf("授权拒绝被拼成混合线路报错: %v", err)
@@ -276,6 +277,51 @@ func TestHongguoPublicFallbackForbiddenGivesPreciseDiagnosis(t *testing.T) {
 		if !strings.HasPrefix(path, "/player/") && path != hongguoPublicFallbackPath {
 			t.Fatalf("授权拒绝后仍降级到其它线路: %v", paths)
 		}
+	}
+}
+
+// 详情页必须用站点声明的可公开集数标记锁定分集，供选集界面提示用户：
+// 前 5 集可下载，第 6 集起网页端不提供公开地址。字段缺失时不能误标。
+func TestHongguoWebChaptersMarkLockedEpisodes(t *testing.T) {
+	vids := make([]string, 8)
+	for i := range vids {
+		vids[i] = fmt.Sprintf("%d", 7701937936731737112+int64(i))
+	}
+	vidsJSON := `"` + strings.Join(vids, `","`) + `"`
+	cases := []struct {
+		name       string
+		field      string
+		wantLocked []bool
+	}{
+		{"前5集开放", `"accessible_episode_cnt":5`, []bool{false, false, false, false, false, true, true, true}},
+		{"字段缺失不误标", ``, []bool{false, false, false, false, false, false, false, false}},
+		{"全部分集开放", `"accessible_episode_cnt":8`, []bool{false, false, false, false, false, false, false, false}},
+		{"非法值不误标", `"accessible_episode_cnt":"abc"`, []bool{false, false, false, false, false, false, false, false}},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			d, server := hongguoPublicTestDownloader(t, func(writer http.ResponseWriter, request *http.Request) {
+				writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+				extra := ""
+				if item.field != "" {
+					extra = "," + item.field
+				}
+				_, _ = fmt.Fprint(writer, `<html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_name":"测试剧","vid_list":[`+vidsJSON+`]`+extra+`}}}}</script></html>`)
+			})
+			d.providerHosts[sourceHongguo] = server.URL
+			_, chapters, err := d.fetchHongguoWebChapters(context.Background(), hongguoPublicTestSeries)
+			if err != nil {
+				t.Fatalf("解析详情失败: %v", err)
+			}
+			if len(chapters) != len(item.wantLocked) {
+				t.Fatalf("章节数 = %d, want %d", len(chapters), len(item.wantLocked))
+			}
+			for i, chapter := range chapters {
+				if chapter.Locked != item.wantLocked[i] {
+					t.Fatalf("第 %d 集 Locked = %v, want %v", i+1, chapter.Locked, item.wantLocked[i])
+				}
+			}
+		})
 	}
 }
 

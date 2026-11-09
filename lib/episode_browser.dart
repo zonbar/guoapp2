@@ -175,6 +175,38 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
   final _scroll = ScrollController();
   String _layout = '';
   int get _pageSize => episodePageSize;
+
+  // 站点明确锁定的第一个集数；为空表示全部集都可下载。
+  int? get _lockedFrom {
+    for (final episode in widget.episodes) {
+      if (episode.locked) return episode.number;
+    }
+    return null;
+  }
+
+  Widget _lockedNotice(BuildContext context, int lockedFrom) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.lock_outline_rounded,
+            size: 15,
+            color: colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '网页端仅开放前 ${lockedFrom - 1} 集下载，第 $lockedFrom 集起需在官方 App 观看；登录账号不解除该限制',
+              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   late int _page =
       max(
         0,
@@ -208,7 +240,16 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.compact) return _continuousGrid(context);
+    final lockedFrom = _lockedFrom;
+    if (widget.compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (lockedFrom != null) _lockedNotice(context, lockedFrom),
+          Expanded(child: _continuousGrid(context)),
+        ],
+      );
+    }
     final pageSize = _pageSize;
     _page = _page.clamp(0, max(0, (widget.episodes.length - 1) ~/ pageSize));
     final start = _page * pageSize;
@@ -217,6 +258,7 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (lockedFrom != null) _lockedNotice(context, lockedFrom),
         EpisodeRangeBar(
           episodes: widget.episodes,
           page: _page,
@@ -302,6 +344,7 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
                     key: ValueKey('${widget.keyPrefix}-${episode.number}'),
                     number: episode.number,
                     vip: episode.vip,
+                    locked: episode.locked,
                     compact: widget.compact,
                     current:
                         widget.selectedNumbers?.contains(episode.number) ??
@@ -420,6 +463,7 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
                   key: ValueKey('${widget.keyPrefix}-${episode.number}'),
                   number: episode.number,
                   vip: episode.vip,
+                  locked: episode.locked,
                   compact: true,
                   current:
                       widget.selectedNumbers?.contains(episode.number) ??

@@ -65,7 +65,10 @@ func (d Drama) DisplayTitle() string {
 }
 
 type Chapter struct {
-	VIP            bool            `json:"vip,omitempty"`
+	VIP bool `json:"vip,omitempty"`
+	// Locked 表示站点明确不对网页端开放该分集的公开播放地址。与 VIP 不同，
+	// 它不是付费试看标记，仅用于在选集界面提示该集无法下载。
+	Locked         bool            `json:"locked,omitempty"`
 	ID             string          `json:"id"`
 	Source         string          `json:"source,omitempty"`
 	Title          string          `json:"title"`

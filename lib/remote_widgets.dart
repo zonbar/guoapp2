@@ -840,6 +840,7 @@ class RemoteEpisodeButton extends StatelessWidget {
     required this.number,
     required this.onPressed,
     this.vip = false,
+    this.locked = false,
     this.current = false,
     this.compact = false,
     this.focusNode,
@@ -847,6 +848,7 @@ class RemoteEpisodeButton extends StatelessWidget {
   });
   final int number;
   final bool vip;
+  final bool locked;
   final bool current;
   final bool compact;
   final VoidCallback onPressed;
@@ -863,7 +865,7 @@ class RemoteEpisodeButton extends StatelessWidget {
     borderWidth: compact ? 1.2 : 2,
     outlined: true,
     onPressed: onPressed,
-    label: '第 $number 集${vip ? '，VIP 试看' : ''}',
+    label: '第 $number 集${vip ? '，VIP 试看' : ''}${locked ? '，网页端不提供公开地址' : ''}',
     child: Center(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -876,10 +878,21 @@ class RemoteEpisodeButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: compact ? 14 : 20,
                 fontWeight: current ? FontWeight.w700 : FontWeight.w500,
+                color: locked
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
+                    : null,
               ),
             ),
           ),
-          if (vip) ...[
+          if (locked) ...[
+            SizedBox(width: compact ? 2 : 4),
+            Icon(
+              Icons.lock_outline_rounded,
+              color: Theme.of(context).colorScheme.outline,
+              size: compact ? 12 : 15,
+            ),
+          ],
+          if (!locked && vip) ...[
             SizedBox(width: compact ? 2 : 4),
             Icon(
               Icons.workspace_premium_rounded,
