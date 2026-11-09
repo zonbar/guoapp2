@@ -288,23 +288,23 @@ func TestHongguoWebChaptersMarkLockedEpisodes(t *testing.T) {
 		vids[i] = fmt.Sprintf("%d", 7701937936731737112+int64(i))
 	}
 	vidsJSON := `"` + strings.Join(vids, `","`) + `"`
+	wantLocked := []bool{false, false, false, false, false, true, true, true}
 	cases := []struct {
-		name       string
-		field      string
-		wantLocked []bool
+		name        string
+		detailField string
 	}{
-		{"前5集开放", `"accessible_episode_cnt":5`, []bool{false, false, false, false, false, true, true, true}},
-		{"字段缺失不误标", ``, []bool{false, false, false, false, false, false, false, false}},
-		{"全部分集开放", `"accessible_episode_cnt":8`, []bool{false, false, false, false, false, false, false, false}},
-		{"非法值不误标", `"accessible_episode_cnt":"abc"`, []bool{false, false, false, false, false, false, false, false}},
+		{"页面声明3集也不误标", `"accessible_episode_cnt":3`},
+		{"页面字段缺失", ``},
+		{"页面声明8集", `"accessible_episode_cnt":8`},
+		{"页面非法值", `"accessible_episode_cnt":"abc"`},
 	}
 	for _, item := range cases {
 		t.Run(item.name, func(t *testing.T) {
 			d, server := hongguoPublicTestDownloader(t, func(writer http.ResponseWriter, request *http.Request) {
 				writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 				extra := ""
-				if item.field != "" {
-					extra = "," + item.field
+				if item.detailField != "" {
+					extra = "," + item.detailField
 				}
 				_, _ = fmt.Fprint(writer, `<html><script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":{"series_name":"测试剧","vid_list":[`+vidsJSON+`]`+extra+`}}}}</script></html>`)
 			})
@@ -313,12 +313,12 @@ func TestHongguoWebChaptersMarkLockedEpisodes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("解析详情失败: %v", err)
 			}
-			if len(chapters) != len(item.wantLocked) {
-				t.Fatalf("章节数 = %d, want %d", len(chapters), len(item.wantLocked))
+			if len(chapters) != len(wantLocked) {
+				t.Fatalf("章节数 = %d, want %d", len(chapters), len(wantLocked))
 			}
 			for i, chapter := range chapters {
-				if chapter.Locked != item.wantLocked[i] {
-					t.Fatalf("第 %d 集 Locked = %v, want %v", i+1, chapter.Locked, item.wantLocked[i])
+				if chapter.Locked != wantLocked[i] {
+					t.Fatalf("第 %d 集 Locked = %v, want %v", i+1, chapter.Locked, wantLocked[i])
 				}
 			}
 		})

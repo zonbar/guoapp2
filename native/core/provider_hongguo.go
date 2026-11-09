@@ -160,9 +160,10 @@ func (d *Downloader) fetchHongguoWebChapters(ctx context.Context, sourceID strin
 	}
 	title := firstNonEmpty(mapString(detail, "series_name", "series_title", "name"), sourceID)
 	vids := anyList(detail["vid_list"])
-	// 站点在详情页明确声明网页端可公开播放的集数；实测登录账号也不改变这个边界。
-	// 把这个范围带到选集界面，避免用户对锁定集反复发起注定失败的下载。
-	accessible := hongguoAccessibleEpisodes(map[string]any{"seriesDetail": detail})
+	// 用实测的取流接口授权边界标记锁定集，不采用页面 SSR 的
+	// accessible_episode_cnt（该值与接口实际放行范围不一致，详见常量注释）。
+	// 登录账号也不改变这个边界。
+	accessible := hongguoPublicEpisodeLimit
 	chapters := make([]Chapter, 0, len(vids))
 	for i, v := range vids {
 		vid := strings.TrimSpace(fmt.Sprint(v))
@@ -224,7 +225,7 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if errors.Is(publicErr, errHongguoPublicEpisodeUnavailable) {
 		// 403 public_fallback_unavailable 是站点对该集的明确授权拒绝，
 		// 不是线路故障；不要再拼出四条混杂的失败原因误导用户。
-		return providerMedia{}, fmt.Errorf("红果该集未在网页端开放公开播放；站点仅开放前若干集的网页直链，登录账号也不解除该限制，其余分集需在官方 App 观看；App 网关与备用线路无法绕过站点授权；不会用试看集冒充该集下载")
+		return providerMedia{}, fmt.Errorf("红果该集未在网页端开放公开播放；网页端仅开放前 %d 集的直链，其余分集需在官方 App 观看，登录账号也不解除该限制；App 网关与备用线路无法绕过站点授权；不会用试看集冒充该集下载", hongguoPublicEpisodeLimit)
 	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
@@ -257,7 +258,7 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 		// 的地址当成用户请求的那一集返回。同时把站点声明的游客可看集数带出，
 		// 让上层直接短路，避免再空跑 App 网关与已停用的备用线路。
 		if strings.Contains(body, "pc_locked_episode") || hongguoAccessibleEpisodes(page) > 0 {
-			return providerMedia{}, &hongguoEpisodeLockedError{accessible: hongguoAccessibleEpisodes(page)}
+			return providerMedia{}, &hongguoEpisodeLockedError{accessible: hongguoPublicEpisodeLimit}
 		}
 		return providerMedia{}, fmt.Errorf("红果未返回所请求的剧集，可能仅允许网页试看；请在站点确认该集的访问权限")
 	}
@@ -282,8 +283,9 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 	return media, nil
 }
 
-// hongguoAccessibleEpisodes 读取播放页 seriesDetail 里站点自己声明的
-// 「游客可看集数」；网页与公开回退接口对这个边界的判定是一致的。
+// hongguoAccessibleEpisodes 读取播放页 seriesDetail 里站点下发的
+// 「网页可看集数」。该值只用于辅助识别 302 试看集重定向，不能当作
+// 公开取流接口的授权边界（两者实测并不一致）。
 func hongguoAccessibleEpisodes(page map[string]any) int {
 	detail, _ := page["seriesDetail"].(map[string]any)
 	count, err := strconv.Atoi(mapString(detail, "accessible_episode_cnt"))

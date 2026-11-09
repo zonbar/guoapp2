@@ -18,6 +18,13 @@ import (
 // 403 public_fallback_unavailable。此前只解析 SSR 页面，会把它误判成完全不可播。
 const hongguoPublicFallbackPath = "/api/video/protected/fallback-play-info"
 
+// hongguoPublicEpisodeLimit 是实测的网页端公开取流边界：fallback-play-info
+// 对前 5 集返回 MP4 直链，第 6 集起一律 403（多部剧、游客与登录账号下均一致）。
+// 注意页面 SSR 下发的 accessible_episode_cnt 是网页展示/引导配置，实测会与
+// 取流接口的授权边界不一致（曾出现页面报 3、接口放行 5 集），不能用来标锁定集。
+// 站点若调整策略，这里与选集提示需要同步更新。
+const hongguoPublicEpisodeLimit = 5
+
 var errHongguoPublicEpisodeUnavailable = errors.New("该集未在红果网页端开放公开播放；登录账号也不解除该限制")
 
 // errHongguoEpisodeLocked 表示站点已明确判定该集对游客锁定：播放页会 302 到
@@ -25,8 +32,8 @@ var errHongguoPublicEpisodeUnavailable = errors.New("该集未在红果网页端
 // 不是线路故障，继续尝试 App 网关或备用域名只会白等并给出误导性的混合报错。
 var errHongguoEpisodeLocked = errors.New("红果该集在网页端被站点锁定")
 
-// hongguoEpisodeLockedError 携带站点声明的游客可看集数，用于把「前 N 集可下」
-// 这个真实边界明确告诉用户。
+// hongguoEpisodeLockedError 携带网页端公开取流边界，用于把「前 N 集可下」
+// 这个实测边界明确告诉用户。
 type hongguoEpisodeLockedError struct {
 	accessible int
 }
