@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -185,5 +186,112 @@ func TestHongguoMediaUsesPublicFallbackWhenPageIsRedacted(t *testing.T) {
 	}
 	if publicCalls != 1 {
 		t.Fatalf("公开回退接口调用次数 = %d, want 1", publicCalls)
+	}
+}
+
+// 锁定集：站点把播放页 302 到试看集并带 pc_locked_episode。必须立即判定为
+// 授权边界，绝不继续空跑 App 网关 / 公开回退 / 备用线路，也不能把试看集
+// 的地址当成用户请求的那一集返回。
+func TestHongguoLockedEpisodeShortCircuitsOtherRoutes(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	handler := func(writer http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		paths = append(paths, request.URL.Path)
+		mu.Unlock()
+		if !strings.HasPrefix(request.URL.Path, "/player/") {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = writer.Write([]byte(`<html><body>pc_locked_episode=` + hongguoPublicTestVideo + `<script>window._ROUTER_DATA = {"loaderData":{"player_page":{"protectedPlayback":true,"videoList":{},"vid":"7701937814501346328","series_id":"` + hongguoPublicTestSeries + `","seriesDetail":{"accessible_episode_cnt":5,"episode_cnt":102}}}}</script></body></html>`))
+	}
+	d, server := hongguoPublicTestDownloader(t, handler)
+	d.providerHosts[sourceHongguo] = server.URL
+	d.hongguoClient().baseURL = server.URL
+
+	task := Task{
+		DramaID: providerDramaID(sourceHongguo, hongguoPublicTestSeries),
+		Chapter: Chapter{Source: sourceHongguo, VideoURL: "hongguo-cenc://" + hongguoPublicTestVideo},
+	}
+	_, err := d.resolveHongguoMedia(context.Background(), task)
+	var locked *hongguoEpisodeLockedError
+	if !errors.As(err, &locked) {
+		t.Fatalf("err = %v, want hongguoEpisodeLockedError", err)
+	}
+	if !errors.Is(err, errHongguoEpisodeLocked) {
+		t.Fatalf("err 未携带锁定标记: %v", err)
+	}
+	if locked.accessible != 5 || !strings.Contains(err.Error(), "前 5 集") {
+		t.Fatalf("诊断未给出游客可看集数: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, path := range paths {
+		if !strings.HasPrefix(path, "/player/") {
+			t.Fatalf("锁定集仍尝试了其它线路: %v", paths)
+		}
+	}
+}
+
+// 公开回退 403 是站点对该集的明确授权拒绝，不应拼出四条混杂的失败原因，
+// 也不应再降级到 App / 备用线路。
+func TestHongguoPublicFallbackForbiddenGivesPreciseDiagnosis(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	handler := func(writer http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		paths = append(paths, request.URL.Path)
+		mu.Unlock()
+		switch {
+		case request.URL.Path == hongguoPublicFallbackPath:
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusForbidden)
+			_, _ = writer.Write([]byte(`{"error":"public_fallback_unavailable"}`))
+		case strings.HasPrefix(request.URL.Path, "/player/"):
+			writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = writer.Write([]byte(`<html><script>window._ROUTER_DATA = {"loaderData":{"player_page":{"protectedPlayback":true,"videoList":{},"vid":"` + hongguoPublicTestVideo + `","series_id":"` + hongguoPublicTestSeries + `"}}}</script></html>`))
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}
+	d, server := hongguoPublicTestDownloader(t, handler)
+	d.providerHosts[sourceHongguo] = server.URL
+	d.hongguoClient().baseURL = server.URL
+
+	task := Task{
+		DramaID: providerDramaID(sourceHongguo, hongguoPublicTestSeries),
+		Chapter: Chapter{Source: sourceHongguo, VideoURL: "hongguo-cenc://" + hongguoPublicTestVideo},
+	}
+	_, err := d.resolveHongguoMedia(context.Background(), task)
+	if err == nil || !strings.Contains(err.Error(), "需登录后观看") {
+		t.Fatalf("err = %v, want 明确的登录授权诊断", err)
+	}
+	if strings.Contains(err.Error(), "备用取流失败") || strings.Contains(err.Error(), "App 取流失败") {
+		t.Fatalf("授权拒绝被拼成混合线路报错: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, path := range paths {
+		if !strings.HasPrefix(path, "/player/") && path != hongguoPublicFallbackPath {
+			t.Fatalf("授权拒绝后仍降级到其它线路: %v", paths)
+		}
+	}
+}
+
+func TestHongguoAccessibleEpisodesParsing(t *testing.T) {
+	cases := []struct {
+		page map[string]any
+		want int
+	}{
+		{map[string]any{"seriesDetail": map[string]any{"accessible_episode_cnt": float64(5)}}, 5},
+		{map[string]any{"seriesDetail": map[string]any{"accessible_episode_cnt": "12"}}, 12},
+		{map[string]any{"seriesDetail": map[string]any{}}, 0},
+		{nil, 0},
+	}
+	for _, item := range cases {
+		if got := hongguoAccessibleEpisodes(item.page); got != item.want {
+			t.Fatalf("hongguoAccessibleEpisodes(%v) = %d, want %d", item.page, got, item.want)
+		}
 	}
 }

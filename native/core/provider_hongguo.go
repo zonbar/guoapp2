@@ -198,16 +198,17 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
 	}
-	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
-	if nativeErr == nil {
-		return media, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return providerMedia{}, err
-	}
+	// 网页播放页最快，而且能唯一确定「该集是否被站点锁定」。放在最前面，
+	// 公开集不必先等 App 网关（该网关目前对取流请求一律返回空 body）。
 	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
 	if pageErr == nil {
 		return media, nil
+	}
+	var locked *hongguoEpisodeLockedError
+	if errors.As(pageErr, &locked) {
+		// 站点已 302 到试看集：授权结论确定，再试 App / 备用线路既无意义
+		// 又会拖到超时，直接返回带公开集数的准确诊断。
+		return providerMedia{}, locked
 	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
@@ -217,6 +218,19 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if publicErr == nil {
 		return media, nil
 	}
+	if errors.Is(publicErr, errHongguoPublicEpisodeUnavailable) {
+		// 403 public_fallback_unavailable 是站点对该集的明确授权拒绝，
+		// 不是线路故障；不要再拼出四条混杂的失败原因误导用户。
+		return providerMedia{}, fmt.Errorf("红果该集未在站点开放公开播放，需登录后观看；站点仅向游客开放部分分集的公开直链，App 网关与备用线路无法绕过站点授权；不会用试看集冒充该集下载")
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
+	// 只有网页与公开回退都因网络/解析失败时，才降级到 App 网关与备用线路。
+	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
+	if nativeErr == nil {
+		return media, nil
+	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
@@ -224,7 +238,7 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if apiErr == nil {
 		return media, nil
 	}
-	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v；网页取流失败：%v；公开回退取流失败：%v；备用取流失败：%w", publicError(nativeErr), publicError(pageErr), publicError(publicErr), apiErr)
+	return providerMedia{}, fmt.Errorf("红果网页取流失败：%v；公开回退取流失败：%v；App 取流失败：%v；备用取流失败：%w", publicError(pageErr), publicError(publicErr), publicError(nativeErr), apiErr)
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
@@ -235,6 +249,13 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 	}
 	page := routerLoaderMap(parseRouterData(body), "player_", "player_page")
 	if mapString(page, "vid") != videoID || mapString(page, "series_id") != seriesID {
+		// 锁定集会被 302 到试看集并在 URL 上带 pc_locked_episode=<原 vid>。
+		// 跟随重定向后 page.vid 会变成试看集；此处必须拦住，绝不能把试看集
+		// 的地址当成用户请求的那一集返回。同时把站点声明的游客可看集数带出，
+		// 让上层直接短路，避免再空跑 App 网关与已停用的备用线路。
+		if strings.Contains(body, "pc_locked_episode") || hongguoAccessibleEpisodes(page) > 0 {
+			return providerMedia{}, &hongguoEpisodeLockedError{accessible: hongguoAccessibleEpisodes(page)}
+		}
 		return providerMedia{}, fmt.Errorf("红果未返回所请求的剧集，可能仅允许网页试看；请在站点确认该集的访问权限")
 	}
 	info, _ := page["video_player_info"].(map[string]any)
@@ -256,6 +277,17 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 		media.Variants = append(media.Variants, variant)
 	}
 	return media, nil
+}
+
+// hongguoAccessibleEpisodes 读取播放页 seriesDetail 里站点自己声明的
+// 「游客可看集数」；网页与公开回退接口对这个边界的判定是一致的。
+func hongguoAccessibleEpisodes(page map[string]any) int {
+	detail, _ := page["seriesDetail"].(map[string]any)
+	count, err := strconv.Atoi(mapString(detail, "accessible_episode_cnt"))
+	if err != nil || count < 0 || count > 10000 {
+		return 0
+	}
+	return count
 }
 
 func hongguoDramaFromAny(v any, category string) Drama {
