@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 root = Path(__file__).resolve().parents[1]
-parser = argparse.ArgumentParser(description='从统一图形生成短剧视界 / 全剧视界平台资源；需要 Pillow。')
+parser = argparse.ArgumentParser(description='从统一图形生成红果短剧视界 / 全剧视界平台资源；需要 Pillow。')
 parser.add_argument('--icon', type=Path, default=root / 'assets/app_icon_master.png')
 parser.add_argument('--output', type=Path, default=root)
 parser.add_argument('--font', type=Path, default=Path('/System/Library/Fonts/PingFang.ttc'))
@@ -30,7 +30,7 @@ for density, size in [('mdpi', 48), ('hdpi', 72), ('xhdpi', 96), ('xxhdpi', 144)
     save(icon.resize((size, size), Image.Resampling.LANCZOS),
          f'android/app/src/main/res/mipmap-{density}/ic_launcher.png')
 font = ImageFont.truetype(str(options.font), 76)
-for name, resource in [('短剧视界', 'tv_banner'), ('全剧视界', 'tv_banner_all_sources')]:
+for name, resource in [('红果短剧视界', 'tv_banner'), ('全剧视界', 'tv_banner_all_sources')]:
     banner = Image.new('RGB', (640, 360), '#101114')
     banner.paste(icon.resize((180, 180), Image.Resampling.LANCZOS), (44, 90))
     draw = ImageDraw.Draw(banner)

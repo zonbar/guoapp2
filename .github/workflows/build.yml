@@ -205,8 +205,42 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: duanjushijie
+            arguments: ''
+          - edition: quanjushijie
+            arguments: '--all-sources'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - run: flutter config --enable-macos-desktop
+      - run: python scripts/build_macos.py ${{ matrix.arguments }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-macos
+          path: dist/macos/*
+          if-no-files-found: error
+          retention-days: 14
+
   release:
-    needs: [android, windows, ios]
+    needs: [android, windows, ios, macos]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -226,13 +260,19 @@ jobs:
         with:
           pattern: duanjushijie-*
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: quanjushijie-*
+          path: release
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
-          name: 短剧视界 ${{ steps.version.outputs.version }}
+          name: 红果短剧视界 / 全剧视界 ${{ steps.version.outputs.version }}
           files: |
             release/**/*.apk
             release/**/*.ipa
             release/**/*-windows-x64-portable.zip
             release/**/*-windows-x64-setup.exe
+            release/**/*-macos-arm64.zip
+            release/**/*-macos-arm64.dmg
           fail_on_unmatched_files: true

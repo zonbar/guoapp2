@@ -8,7 +8,7 @@ class BuildVariant:
 
     @property
     def name(self):
-        return '全剧视界' if self.all_sources else '短剧视界'
+        return '全剧视界' if self.all_sources else '红果短剧视界'
 
     @property
     def slug(self):
@@ -40,4 +40,4 @@ class BuildVariant:
 
 def add_variant_argument(parser):
     parser.add_argument('--all-sources', action='store_true',
-                        help='构建包含全部站源的全剧视界；默认构建仅红果的短剧视界')
+                        help='构建包含全部站源的全剧视界；默认构建仅红果的红果短剧视界')

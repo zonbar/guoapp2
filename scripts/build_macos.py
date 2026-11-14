@@ -156,7 +156,7 @@ def write_notes(variant, version, archive_path, image_path):
         f'# {variant.name} {version} · macOS Apple Silicon',
         '',
         '- 架构：arm64，仅支持 Apple Silicon（M 系列）Mac；Intel Mac 无法运行。',
-        '- 编译版本：' + ('全剧视界（全站源）' if variant.all_sources else '短剧视界（仅红果）') + '。',
+        '- 编译版本：' + ('全剧视界（全站源）' if variant.all_sources else '红果短剧视界（仅红果）') + '。',
         '- 分发文件：`' + archive_path.name + '`（.app 压缩包）、`' + image_path.name + '`（安装镜像）。',
         '- 校验：下载 `SHA256SUMS.txt` 后执行 `shasum -a 256 -c SHA256SUMS.txt`。',
         '',

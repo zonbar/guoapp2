@@ -1,6 +1,6 @@
-# 短剧视界 / 全剧视界
+# 红果短剧视界 / 全剧视界
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.0.6+80（未验证开发快照）**。1.0.0 起默认版显示名为“短剧视界”、`--all-sources` 全站源版为“全剧视界”，分发文件名前缀为 `duanjushijie` / `quanjushijie`；GitHub Release 只发布短剧视界版安装包，全剧视界版只在 Actions Artifact 下载；Android Actions 不再保留构建日志上传。上一轮（1.0.2+76）新增播放线路选择与线路复用：清晰度按钮右侧新增“线路 N”按钮，点击打开线路列表，可在播放中切换线路并保留当前位置与播放状态；选定线路后，同一剧集的后续集数（含自动连播、遥控上一集 / 下一集、滑动切集、选集菜单）默认复用该线路，不再从第一条线路重新尝试；切换下一集时默认不再弹出暂停按钮，只有单击画面、按空格暂停等原有操作才显示控制层，静默数秒自动隐藏的逻辑保留。线路列表来自站源返回的同一集多地址（按画质优先排序），原生核心新增 `selectRoute` 动作与 `nativePreferredRoute` 收敛 0 值与越界值，Dart 端切换线路时保留原会话再重开，切集时把当前线路索引传给解析与预加载。改动涉及 `lib/player_screen.dart`、`lib/player_controls.dart`、`lib/player_menu.dart`、`lib/television_controls.dart`、`lib/player_interactions.dart`、`lib/core_bridge.dart`、`lib/playback_loader.dart`、`lib/playback_preloader.dart`、`lib/local_media_screen.dart` 与 `native/core` 的播放线路代码。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.0.7+81（未验证开发快照）**。1.0.0 起默认版显示名为"红果短剧视界"、`--all-sources` 全站源版为“全剧视界”，分发文件名前缀为 `duanjushijie` / `quanjushijie`；GitHub Release 同时发布红果短剧视界版与全剧视界版安装包（含 macOS Apple Silicon）；Android Actions 不再保留构建日志上传。上一轮（1.0.2+76）新增播放线路选择与线路复用：清晰度按钮右侧新增“线路 N”按钮，点击打开线路列表，可在播放中切换线路并保留当前位置与播放状态；选定线路后，同一剧集的后续集数（含自动连播、遥控上一集 / 下一集、滑动切集、选集菜单）默认复用该线路，不再从第一条线路重新尝试；切换下一集时默认不再弹出暂停按钮，只有单击画面、按空格暂停等原有操作才显示控制层，静默数秒自动隐藏的逻辑保留。线路列表来自站源返回的同一集多地址（按画质优先排序），原生核心新增 `selectRoute` 动作与 `nativePreferredRoute` 收敛 0 值与越界值，Dart 端切换线路时保留原会话再重开，切集时把当前线路索引传给解析与预加载。改动涉及 `lib/player_screen.dart`、`lib/player_controls.dart`、`lib/player_menu.dart`、`lib/television_controls.dart`、`lib/player_interactions.dart`、`lib/core_bridge.dart`、`lib/playback_loader.dart`、`lib/playback_preloader.dart`、`lib/local_media_screen.dart` 与 `native/core` 的播放线路代码。
 
 本轮（1.0.6+80）参照 `hongguo-open-player` 的官方播放链路，补齐红果第 6 集及以后分集的取流：网页端公开接口实测只放行前 5 集，原先在锁定集和 403 上直接短路，导致后续分集不可播。原生核心新增匿名播放设备注册与本地持久化、播放接口专用签名族（551 版 `x-argus` / `x-ladon` / `x-khronos` / `x-ss-stub`）、番茄 `video_model/v1` 与 gzip `multi_video_model/player/v1` 三条官方线路、清晰度选择、Spade 地址解密与 `spade_a` 内容密钥派生，仍复用既有 `hongguo-cenc://` 与 `decryption_key` 播放路径。详情页不再把任意分集标为锁定；网页取流、公开回退失败后继续走官方线路，全部线路空响应时按短退避重试并在最后一次刷新设备。红果相关 Go 用例、签名与密钥黄金向量、本地服务端端到端用例、格式与静态检查通过；真实接口对第 1 / 6 / 30 / 63 集均取到 1080P 且密钥完整，片源 `tenc` 的 `default_KID` 与响应 `kid` 一致。设备端播放器实机验收仍待进行。
 
@@ -22,21 +22,21 @@ iOS 发热排查：原配置 `enableHardwareAcceleration: !Platform.isIOS` 会�
 
 | 编译方式 | 应用名称 | 可用站源 |
 | --- | --- | --- |
-| 默认，不加参数 | 短剧视界 | 仅红果 |
+| 默认，不加参数 | 红果短剧视界 | 仅红果 |
 | 构建脚本加 `--all-sources` | 全剧视界 | 红果、黄豆、剧果、野果、帝果、黄果视频、黄果 AI、黄果旧版，以及芽果、猫果、饭果、观果、河果、星果、花果、牛果、网果、发果、皮果、伍果 |
 
 全站源版首页提供“全部站源 / 红果 / 黄豆 / 剧果 / 野果 / 帝果 / 黄果”及十二个新增站源入口；全部站源只汇总当前用户获准的入口。剧果、野果、帝果作为独立站源；黄果统一汇总视频、AI 与旧 API 的分类和内容。其余站源入口保留各自的权限、分页、独立更新和健康检测，可在站源管理中分别维护。已有受限用户不会自动获得新增站源权限，管理员可在用户管理中勾选。
 
-这是编译选项，应用内不能切换版本。标题、Android 桌面名称与电视横幅、Windows 窗口与分发文件名、iOS 显示名随编译选项变化。界面、站源调用、原生下载调度同时限制可用站源；短剧视界版不会访问或继续执行其他站源的旧任务。
+这是编译选项，应用内不能切换版本。标题、Android 桌面名称与电视横幅、Windows 窗口与分发文件名、iOS 显示名随编译选项变化。界面、站源调用、原生下载调度同时限制可用站源；红果短剧视界版不会访问或继续执行其他站源的旧任务。
 
 版本 1.0.0 起，显示名与分发包前缀固定为下表；1.0.0 之前发布的 `hongguojian-` / `zhenguojian-` 包名不再产出新包。
 
 | 编译方式 | 显示名 | 分发包前缀 | 示例 |
 | --- | --- | --- | --- |
-| 默认 | 短剧视界 | `duanjushijie` | `duanjushijie-1.0.6+80-arm64-v8a.apk`、`duanjushijie.exe` |
-| `--all-sources` | 全剧视界 | `quanjushijie` | `quanjushijie-1.0.6+80-arm64-v8a.apk`、`quanjushijie.exe` |
+| 默认 | 红果短剧视界 | `duanjushijie` | `duanjushijie-1.0.7+81-arm64-v8a.apk`、`duanjushijie.exe` |
+| `--all-sources` | 全剧视界 | `quanjushijie` | `quanjushijie-1.0.7+81-arm64-v8a.apk`、`quanjushijie.exe` |
 
-两版保留原 Android / iOS 应用标识及数据目录；Android 使用同一签名可相互覆盖升级，不能作为两个独立正式应用并排安装。Windows 沿用原内部产品标识与数据目录。切换版本保留追剧、观看记录、用户权限和下载记录；短剧视界版隐藏其他站源内容，恢复全站源版后可继续使用。备份格式也保持兼容。
+两版保留原 Android / iOS 应用标识及数据目录；Android 使用同一签名可相互覆盖升级，不能作为两个独立正式应用并排安装。Windows 沿用原内部产品标识与数据目录。切换版本保留追剧、观看记录、用户权限和下载记录；红果短剧视界版隐藏其他站源内容，恢复全站源版后可继续使用。备份格式也保持兼容。
 
 ### 0.2.53 GitHub Actions 验证
 
@@ -47,7 +47,7 @@ iOS 发热排查：原配置 `enableHardwareAcceleration: !Platform.isIOS` 会�
 | Dart 格式与静态分析 | 通过 |
 | Flutter 默认测试 | 127 项通过、21 项失败、1 项跳过；失败涉及追剧存储、电视焦点、下载队列和本地媒体合并 |
 | 本轮定向测试 | 播放器点击行为、弹幕节流、跨平台外壳与菜单测试通过；全站源 Flutter 测试和两组 Go race 测试因前置测试失败而跳过 |
-| Android | 短剧视界版与全站源版 Release 构建通过 |
+| Android | 红果短剧视界版与全站源版 Release 构建通过 |
 | iOS | 两版未签名 IPA 构建通过 |
 | Windows | 两版可执行文件编译成功；MPV smoke 在 20 秒内未检测到播放进度，两个 smoke job 失败且未上传 ZIP |
 | 设备验收 | 未测试真实播放、交互、温度或帧耗 |
@@ -686,10 +686,11 @@ SR-1、SR-2 与 SR-4 已接入源码，小型动漫 CNN 也包含在本轮；SR-
 
 | 平台 | 包与状态 |
 | --- | --- |
-| Android 8.0+ 手机 | 源码已更新到 `1.0.6+80`（未验证）：红果全部分集接入官方播放线路，网页锁定集不再短路；真实安装、CENC 解密播放、热量和帧耗仍待设备验收 |
-| Windows 10/11 x64 | 源码版本为 `1.0.6+80`，共用红果官方播放线路；便携版完整解压后运行 `duanjushijie.exe`，全站源版为 `quanjushijie.exe`，保留所有 DLL 和 `data`；安装 / 升级 / 卸载、桌面播放与局域网原生发现待验收 |
-| Android TV | 与手机共用 `1.0.6+80` 源码并保持电视遥控布局，共用红果官方播放线路；待电视 / 盒子实机验收；0.2.12 选集 / 设置及 0.2.13 同步仍待集中验证 |
-| iOS 15.1+ | 源码已更新到 `1.0.6+80`（未验证），共用红果官方播放线路；仍需签名安装与真机播放验收；已加入工程、Go 核心链接、媒体依赖、文件管理、系统代理桥接、Bonjour / 局域网权限和构建脚本，尚无已签名 IPA |
+| Android 8.0+ 手机 | 源码已更新到 `1.0.7+81`（未验证）：红果全部分集接入官方播放线路，网页锁定集不再短路；真实安装、CENC 解密播放、热量和帧耗仍待设备验收 |
+| Windows 10/11 x64 | 源码版本为 `1.0.7+81`，共用红果官方播放线路；便携版完整解压后运行 `duanjushijie.exe`，全站源版为 `quanjushijie.exe`，保留所有 DLL 和 `data`；安装 / 升级 / 卸载、桌面播放与局域网原生发现待验收 |
+| Android TV | 与手机共用 `1.0.7+81` 源码并保持电视遥控布局，共用红果官方播放线路；待电视 / 盒子实机验收；0.2.12 选集 / 设置及 0.2.13 同步仍待集中验证 |
+| iOS 15.1+ | 源码已更新到 `1.0.7+81`（未验证），共用红果官方播放线路；仍需签名安装与真机播放验收；已加入工程、Go 核心链接、媒体依赖、文件管理、系统代理桥接、Bonjour / 局域网权限和构建脚本，尚无已签名 IPA |
+| macOS 11+ Apple Silicon | 源码已更新到 `1.0.7+81`，新增 `macos` 构建任务与发布：红果短剧视界版与全剧视界版均生成 ad-hoc 签名的 ZIP 与 DMG（arm64），未使用 Developer ID 签名与公证，首次打开需手动解除隔离；设备端播放验收仍待进行 |
 
 | 历史版本 0.2.15 | 安装包 | 大小 |
 | --- | --- | --- |
@@ -708,13 +709,13 @@ SR-1、SR-2 与 SR-4 已接入源码，小型动漫 CNN 也包含在本轮；SR-
 
 推送 `main` / `master` 或手动运行 **Build app packages**，会并行构建三平台两种版本。恢复 tag 不重复触发构建；PR 或手动勾选 `run_checks` 时另行运行完整检查，检查任务不阻挡平台打包。Windows 安装程序由 Inno Setup 6 编译，runner 缺少编译器时自动安装；云端结果与设备验收分别记录：
 
-| 短剧视界版 Artifact | 全站源版 Artifact | 内容 |
+| 红果短剧视界版 Artifact | 全站源版 Artifact | 内容 |
 | --- | --- | --- |
 | `duanjushijie-android` | `quanjushijie-android` | 三种架构 APK 和 SHA256 |
 | `duanjushijie-windows` | `quanjushijie-windows` | `*-windows-x64-setup.exe` 安装版、`*-windows-x64-portable.zip` 便携版及两者的 SHA256；显式开启完整检查后，从便携包检查原生核心、FFprobe、换封装及播放器启动 |
 | `duanjushijie-ios-unsigned` | `quanjushijie-ios-unsigned` | 标准 `Payload/*.app` 结构的未签名 IPA 和 SHA256，安装前仍需签名 |
 
-Actions 分别传入默认参数与 `--all-sources` 构建两版；显式开启完整检查后，Flutter 和 Go 回归也覆盖两种编译配置。Artifact 保留 14 天。非 PR 运行中，`release` 任务等待 Android、Windows、iOS 全部构建成功，只按 `pubspec.yaml` 版本发布短剧视界版（`duanjushijie-*`）产物：各架构 APK、未签名 IPA，以及该版的 Windows 安装程序和便携 ZIP；全剧视界版（`quanjushijie-*`）只在 Actions Artifact 下载，不进入 Release。任一平台失败时不发布本轮 Release；实际产物以 Actions 输出为准。
+Actions 分别传入默认参数与 `--all-sources` 构建两版；显式开启完整检查后，Flutter 和 Go 回归也覆盖两种编译配置。Artifact 保留 14 天。非 PR 运行中，`release` 任务等待 Android、Windows、iOS、macOS 全部构建成功，按 `pubspec.yaml` 版本发布红果短剧视界版与全剧视界版（`duanjushijie-*` / `quanjushijie-*`）产物：各架构 APK、未签名 IPA、Windows 安装程序与便携 ZIP，以及 macOS Apple Silicon 的 ZIP 与 DMG；任一平台失败时不发布本轮 Release；实际产物以 Actions 输出为准。
 
 Windows 下载选择：
 
@@ -764,7 +765,7 @@ python3 scripts/build_android.py --abi arm64-v8a
 python3 scripts/build_android.py --cn-mirrors
 ~~~
 
-首条默认生成短剧视界，第二条生成含全部站源的全剧视界。`--all-sources` 可以与 `--abi`、`--cn-mirrors` 组合，例如 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`。
+首条默认生成红果短剧视界，第二条生成含全部站源的全剧视界。`--all-sources` 可以与 `--abi`、`--cn-mirrors` 组合，例如 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`。
 
 Windows PowerShell：
 
@@ -774,7 +775,7 @@ Windows PowerShell：
 .\scripts\build_windows.ps1 -ChinaMirrors
 ~~~
 
-Windows 也可运行 `python scripts/build_windows.py --all-sources`；省略参数为短剧视界版。本地打包还需安装 Inno Setup 6，脚本从 `PATH` 或默认安装位置查找 `ISCC.exe`，一次生成安装 EXE 与便携 ZIP；编译器缺失或安装程序生成失败会终止打包。
+Windows 也可运行 `python scripts/build_windows.py --all-sources`；省略参数为红果短剧视界版。本地打包还需安装 Inno Setup 6，脚本从 `PATH` 或默认安装位置查找 `ISCC.exe`，一次生成安装 EXE 与便携 ZIP；编译器缺失或安装程序生成失败会终止打包。
 
 国内构建可使用以上镜像开关：Flutter/pub 使用 `storage.flutter-io.cn` / `pub.flutter-io.cn`，Android 的 Google、Maven Central 和 Gradle 插件依赖优先使用阿里云镜像，同时保留官方仓库。已有环境变量优先；镜像配置仅作用于本次构建，保留锁定的依赖版本与 SHA256 校验值；结束后恢复原锁文件并清理临时 Gradle 配置，不改全局代理。GitHub Actions 默认使用官方源。镜像可能有同步延迟，遇到镜像缺失或异常可去掉开关重试；此开关不替代 Flutter SDK 和 Gradle 发行包的初次安装。
 
@@ -800,9 +801,9 @@ python3 scripts/build_macos.py
 python3 scripts/build_macos.py --all-sources
 ~~~
 
-脚本在缺少 `macos/` Runner 时先用 `flutter create --platforms=macos` 补齐，编译 `libduanju_core.dylib` 并嵌入应用 `Contents/Frameworks`，关闭 App Sandbox、做 ad-hoc 签名，校验 arm64 架构与 FFI 导出符号后生成 ZIP、DMG 和 `SHA256SUMS.txt`。也可以只运行 GitHub Actions 的 `Release macOS Apple Silicon` 工作流，由 arm64 macOS runner 构建并发布 Release：默认短剧视界版发布到 `v<版本>-macos-arm64`，勾选 `all_sources` 的全剧视界版发布到 `v<版本>-macos-arm64-all-sources`，两个变体各自带完整的 `SHA256SUMS.txt` 与发布说明。未使用 Developer ID 签名与公证，首次打开需手动解除隔离；后台下载、画质增强等移动端 / Windows 专属功能未在 macOS 上做完整适配。
+脚本在缺少 `macos/` Runner 时先用 `flutter create --platforms=macos` 补齐，编译 `libduanju_core.dylib` 并嵌入应用 `Contents/Frameworks`，关闭 App Sandbox、做 ad-hoc 签名，校验 arm64 架构与 FFI 导出符号后生成 ZIP、DMG 和 `SHA256SUMS.txt`。也可以运行 GitHub Actions 的 `macos` 构建任务，由 arm64 macOS runner 构建两版 macOS 安装包，再由统一的 `release` 任务随主版本 `v<版本>` 一起发布：默认红果短剧视界版与 `--all-sources` 全剧视界版各自带完整的 `SHA256SUMS.txt` 与发布说明。未使用 Developer ID 签名与公证，首次打开需手动解除隔离；后台下载、画质增强等移动端 / Windows 专属功能未在 macOS 上做完整适配。
 
-产物在 `dist/android`、`dist/windows`、`dist/ios`、`dist/macos`，短剧视界版以 `duanjushijie-` 开头，全站源版以 `quanjushijie-` 开头；1.0.0 之前的 `hongguojian-` / `zhenguojian-` 只出现在历史记录中。iOS 脚本将 Go 核心生成 XCFramework，再经 CocoaPods 链接并检查 FFI 导出符号；macOS 脚本生成 dylib 并随应用打包，媒体库同样随应用打包。
+产物在 `dist/android`、`dist/windows`、`dist/ios`、`dist/macos`，红果短剧视界版以 `duanjushijie-` 开头，全站源版以 `quanjushijie-` 开头；1.0.0 之前的 `hongguojian-` / `zhenguojian-` 只出现在历史记录中。iOS 脚本将 Go 核心生成 XCFramework，再经 CocoaPods 链接并检查 FFI 导出符号；macOS 脚本生成 dylib 并随应用打包，媒体库同样随应用打包。
 
 首次 Android 调试先编译对应架构核心：
 
