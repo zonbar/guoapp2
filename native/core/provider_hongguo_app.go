@@ -39,6 +39,8 @@ type hongguoCatalogState struct {
 type hongguoAppClient struct {
 	mu             sync.Mutex
 	catalogMu      sync.Mutex
+	playbackMu     sync.Mutex
+	playbackDevice *hongguoPlaybackDevice
 	baseURL        string
 	state          hongguoCatalogState
 	details        map[string]hongguoDetailEntry

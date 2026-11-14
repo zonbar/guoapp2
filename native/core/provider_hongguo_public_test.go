@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,7 +24,14 @@ func hongguoPublicTestDownloader(t *testing.T, handler http.HandlerFunc) (*Downl
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	d := &Downloader{
-		cfg:           Config{dataDir: t.TempDir(), Retries: 1, PageSize: 30, MaxPagesPerSort: 1, HongguoURL: server.URL},
+		cfg: Config{
+			dataDir: t.TempDir(), Retries: 1, PageSize: 30, MaxPagesPerSort: 1,
+			HongguoURL:          server.URL,
+			HongguoRegisterURL:  server.URL + "/device_register",
+			HongguoShortplayURL: server.URL + "/shortplay",
+			HongguoPlayerURL:    server.URL + "/player_api",
+			HongguoPlayerAltURL: server.URL + "/player_api_alt",
+		},
 		client:        server.Client(),
 		limiter:       newRequestLimiter(3, 0),
 		providerHosts: map[string]string{},
@@ -190,68 +198,31 @@ func TestHongguoMediaUsesPublicFallbackWhenPageIsRedacted(t *testing.T) {
 	}
 }
 
-// 锁定集：站点把播放页 302 到试看集并带 pc_locked_episode。必须立即判定为
-// 授权边界，绝不继续空跑 App 网关 / 公开回退 / 备用线路，也不能把试看集
-// 的地址当成用户请求的那一集返回。
-func TestHongguoLockedEpisodeShortCircuitsOtherRoutes(t *testing.T) {
+// 锁定集：站点把播放页 302 到试看集，公开回退返回 403。此时必须继续走
+// 官方播放线路取到用户请求的那一集，绝不能把试看集地址冒充成目标分集。
+func TestHongguoLockedEpisodeUsesOfficialPlayerRoute(t *testing.T) {
 	var mu sync.Mutex
 	var paths []string
+	var requestedVideo string
 	handler := func(writer http.ResponseWriter, request *http.Request) {
 		mu.Lock()
 		paths = append(paths, request.URL.Path)
 		mu.Unlock()
-		if !strings.HasPrefix(request.URL.Path, "/player/") {
-			writer.WriteHeader(http.StatusNotFound)
-			return
-		}
-		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = writer.Write([]byte(`<html><body>pc_locked_episode=` + hongguoPublicTestVideo + `<script>window._ROUTER_DATA = {"loaderData":{"player_page":{"protectedPlayback":true,"videoList":{},"vid":"7701937814501346328","series_id":"` + hongguoPublicTestSeries + `","seriesDetail":{"accessible_episode_cnt":5,"episode_cnt":102}}}}</script></body></html>`))
-	}
-	d, server := hongguoPublicTestDownloader(t, handler)
-	d.providerHosts[sourceHongguo] = server.URL
-	d.hongguoClient().baseURL = server.URL
-
-	task := Task{
-		DramaID: providerDramaID(sourceHongguo, hongguoPublicTestSeries),
-		Chapter: Chapter{Source: sourceHongguo, VideoURL: "hongguo-cenc://" + hongguoPublicTestVideo},
-	}
-	_, err := d.resolveHongguoMedia(context.Background(), task)
-	var locked *hongguoEpisodeLockedError
-	if !errors.As(err, &locked) {
-		t.Fatalf("err = %v, want hongguoEpisodeLockedError", err)
-	}
-	if !errors.Is(err, errHongguoEpisodeLocked) {
-		t.Fatalf("err 未携带锁定标记: %v", err)
-	}
-	if locked.accessible != 5 || !strings.Contains(err.Error(), "前 5 集") {
-		t.Fatalf("诊断未给出游客可看集数: %v", err)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	for _, path := range paths {
-		if !strings.HasPrefix(path, "/player/") {
-			t.Fatalf("锁定集仍尝试了其它线路: %v", paths)
-		}
-	}
-}
-
-// 公开回退 403 是站点对该集的明确授权拒绝，不应拼出四条混杂的失败原因，
-// 也不应再降级到 App / 备用线路。
-func TestHongguoPublicFallbackForbiddenGivesPreciseDiagnosis(t *testing.T) {
-	var mu sync.Mutex
-	var paths []string
-	handler := func(writer http.ResponseWriter, request *http.Request) {
-		mu.Lock()
-		paths = append(paths, request.URL.Path)
-		mu.Unlock()
+		writer.Header().Set("Content-Type", "application/json")
 		switch {
-		case request.URL.Path == hongguoPublicFallbackPath:
-			writer.Header().Set("Content-Type", "application/json")
-			writer.WriteHeader(http.StatusForbidden)
-			_, _ = writer.Write([]byte(`{"error":"public_fallback_unavailable"}`))
 		case strings.HasPrefix(request.URL.Path, "/player/"):
 			writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = writer.Write([]byte(`<html><script>window._ROUTER_DATA = {"loaderData":{"player_page":{"protectedPlayback":true,"videoList":{},"vid":"` + hongguoPublicTestVideo + `","series_id":"` + hongguoPublicTestSeries + `"}}}</script></html>`))
+			_, _ = writer.Write([]byte(`<html><body>pc_locked_episode=` + hongguoPublicTestVideo + `<script>window._ROUTER_DATA = {"loaderData":{"player_page":{"protectedPlayback":true,"videoList":{},"vid":"7701937814501346328","series_id":"` + hongguoPublicTestSeries + `","seriesDetail":{"accessible_episode_cnt":5,"episode_cnt":102}}}}</script></body></html>`))
+		case request.URL.Path == hongguoPublicFallbackPath:
+			writer.WriteHeader(http.StatusForbidden)
+			_, _ = writer.Write([]byte(`{"error":"public_fallback_unavailable"}`))
+		case request.URL.Path == "/device_register":
+			_, _ = writer.Write([]byte(hongguoPlayerTestRegisterResponse))
+		case request.URL.Path == "/shortplay":
+			var payload map[string]any
+			_ = json.NewDecoder(request.Body).Decode(&payload)
+			requestedVideo, _ = payload["video_id"].(string)
+			_, _ = writer.Write(hongguoPlayerTestResponse())
 		default:
 			writer.WriteHeader(http.StatusNotFound)
 		}
@@ -264,31 +235,77 @@ func TestHongguoPublicFallbackForbiddenGivesPreciseDiagnosis(t *testing.T) {
 		DramaID: providerDramaID(sourceHongguo, hongguoPublicTestSeries),
 		Chapter: Chapter{Source: sourceHongguo, VideoURL: "hongguo-cenc://" + hongguoPublicTestVideo},
 	}
-	_, err := d.resolveHongguoMedia(context.Background(), task)
-	if err == nil || !strings.Contains(err.Error(), "登录账号也不解除") {
-		t.Fatalf("err = %v, want 明确的网页端授权边界诊断", err)
+	media, err := d.resolveHongguoMedia(context.Background(), task)
+	if err != nil {
+		t.Fatalf("锁定集未能通过官方播放线路取流: %v", err)
 	}
-	if strings.Contains(err.Error(), "备用取流失败") || strings.Contains(err.Error(), "App 取流失败") {
-		t.Fatalf("授权拒绝被拼成混合线路报错: %v", err)
+	if !strings.HasPrefix(media.URL, hongguoPlayerTestMedia) || len(media.CENCKey) != 16 {
+		t.Fatalf("锁定集取到了错误的媒体: %+v", media)
+	}
+	if requestedVideo != hongguoPublicTestVideo {
+		t.Fatalf("官方线路请求了错误的分集: %q", requestedVideo)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	for _, path := range paths {
-		if !strings.HasPrefix(path, "/player/") && path != hongguoPublicFallbackPath {
-			t.Fatalf("授权拒绝后仍降级到其它线路: %v", paths)
-		}
+	if !slices.Contains(paths, "/shortplay") {
+		t.Fatalf("锁定集未尝试官方播放线路: %v", paths)
 	}
 }
 
-// 详情页必须用站点声明的可公开集数标记锁定分集，供选集界面提示用户：
-// 前 5 集可下载，第 6 集起网页端不提供公开地址。字段缺失时不能误标。
-func TestHongguoWebChaptersMarkLockedEpisodes(t *testing.T) {
+// 公开回退 403 只代表网页端不开放该集，官方播放线路仍应取到完整片源。
+func TestHongguoPublicFallbackForbiddenFallsBackToPlayer(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	handler := func(writer http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		paths = append(paths, request.URL.Path)
+		mu.Unlock()
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.URL.Path == hongguoPublicFallbackPath:
+			writer.WriteHeader(http.StatusForbidden)
+			_, _ = writer.Write([]byte(`{"error":"public_fallback_unavailable"}`))
+		case strings.HasPrefix(request.URL.Path, "/player/"):
+			writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = writer.Write([]byte(`<html><script>window._ROUTER_DATA = {"loaderData":{"player_page":{"protectedPlayback":true,"videoList":{},"vid":"` + hongguoPublicTestVideo + `","series_id":"` + hongguoPublicTestSeries + `"}}}</script></html>`))
+		case request.URL.Path == "/device_register":
+			_, _ = writer.Write([]byte(hongguoPlayerTestRegisterResponse))
+		case request.URL.Path == "/shortplay":
+			_, _ = writer.Write(hongguoPlayerTestResponse())
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}
+	d, server := hongguoPublicTestDownloader(t, handler)
+	d.providerHosts[sourceHongguo] = server.URL
+	d.hongguoClient().baseURL = server.URL
+
+	task := Task{
+		DramaID: providerDramaID(sourceHongguo, hongguoPublicTestSeries),
+		Chapter: Chapter{Source: sourceHongguo, VideoURL: "hongguo-cenc://" + hongguoPublicTestVideo},
+	}
+	media, err := d.resolveHongguoMedia(context.Background(), task)
+	if err != nil {
+		t.Fatalf("网页端 403 后未能取到片源: %v", err)
+	}
+	if !strings.HasPrefix(media.URL, hongguoPlayerTestMedia) {
+		t.Fatalf("media.URL = %q", media.URL)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Contains(paths, "/shortplay") {
+		t.Fatalf("网页端 403 后未尝试官方播放线路: %v", paths)
+	}
+}
+
+// 详情页保留全部分集且不标锁定：网页端公开的集数不再是取流上限。
+func TestHongguoWebChaptersKeepAllEpisodesUnlocked(t *testing.T) {
 	vids := make([]string, 8)
 	for i := range vids {
 		vids[i] = fmt.Sprintf("%d", 7701937936731737112+int64(i))
 	}
 	vidsJSON := `"` + strings.Join(vids, `","`) + `"`
-	wantLocked := []bool{false, false, false, false, false, true, true, true}
+	wantLocked := []bool{false, false, false, false, false, false, false, false}
 	cases := []struct {
 		name        string
 		detailField string

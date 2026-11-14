@@ -160,10 +160,6 @@ func (d *Downloader) fetchHongguoWebChapters(ctx context.Context, sourceID strin
 	}
 	title := firstNonEmpty(mapString(detail, "series_name", "series_title", "name"), sourceID)
 	vids := anyList(detail["vid_list"])
-	// 用实测的取流接口授权边界标记锁定集，不采用页面 SSR 的
-	// accessible_episode_cnt（该值与接口实际放行范围不一致，详见常量注释）。
-	// 登录账号也不改变这个边界。
-	accessible := hongguoPublicEpisodeLimit
 	chapters := make([]Chapter, 0, len(vids))
 	for i, v := range vids {
 		vid := strings.TrimSpace(fmt.Sprint(v))
@@ -171,7 +167,7 @@ func (d *Downloader) fetchHongguoWebChapters(ctx context.Context, sourceID strin
 			continue
 		}
 		idx := i + 1
-		chapters = append(chapters, Chapter{ID: providerChapterID(sourceHongguo, sourceID, vid), Source: sourceHongguo, Title: fmt.Sprintf("第%d集", idx), VideoURL: "hongguo-cenc://" + vid, CurrentEpisode: rawEpisode(idx), Locked: accessible > 0 && idx > accessible})
+		chapters = append(chapters, Chapter{ID: providerChapterID(sourceHongguo, sourceID, vid), Source: sourceHongguo, Title: fmt.Sprintf("第%d集", idx), VideoURL: "hongguo-cenc://" + vid, CurrentEpisode: rawEpisode(idx)})
 	}
 	if len(chapters) == 0 {
 		return title, nil, errors.New("红果详情没有返回剧集 ID")
@@ -202,47 +198,36 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
 	}
-	// 网页播放页最快，而且能唯一确定「该集是否被站点锁定」。放在最前面，
-	// 公开集不必先等 App 网关（该网关目前对取流请求一律返回空 body）。
 	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
 	if pageErr == nil {
 		return media, nil
 	}
-	var locked *hongguoEpisodeLockedError
-	if errors.As(pageErr, &locked) {
-		// 站点已 302 到试看集：授权结论确定，再试 App / 备用线路既无意义
-		// 又会拖到超时，直接返回带公开集数的准确诊断。
-		return providerMedia{}, locked
-	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
-	// 播放页 SSR 会脱敏受保护分集的地址，改走网页播放器自己使用的公开回退接口。
 	media, publicErr := d.resolveHongguoPublicFallback(ctx, seriesID, videoID)
 	if publicErr == nil {
 		return media, nil
 	}
-	if errors.Is(publicErr, errHongguoPublicEpisodeUnavailable) {
-		// 403 public_fallback_unavailable 是站点对该集的明确授权拒绝，
-		// 不是线路故障；不要再拼出四条混杂的失败原因误导用户。
-		return providerMedia{}, fmt.Errorf("红果该集未在网页端开放公开播放；网页端仅开放前 %d 集的直链，其余分集需在官方 App 观看，登录账号也不解除该限制；App 网关与备用线路无法绕过站点授权；不会用试看集冒充该集下载", hongguoPublicEpisodeLimit)
-	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
-	// 只有网页与公开回退都因网络/解析失败时，才降级到 App 网关与备用线路。
-	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
-	if nativeErr == nil {
+	media, playerErr := d.resolveHongguoPlayerMedia(ctx, videoID)
+	if playerErr == nil {
 		return media, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
+	}
+	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
+	if nativeErr == nil {
+		return media, nil
 	}
 	media, apiErr := d.resolveHongguoPlaybackAPI(ctx, seriesID, videoID)
 	if apiErr == nil {
 		return media, nil
 	}
-	return providerMedia{}, fmt.Errorf("红果网页取流失败：%v；公开回退取流失败：%v；App 取流失败：%v；备用取流失败：%w", publicError(pageErr), publicError(publicErr), publicError(nativeErr), apiErr)
+	return providerMedia{}, fmt.Errorf("红果网页取流失败：%v；公开回退取流失败：%v；官方播放线路失败：%v；App 取流失败：%v；备用取流失败：%w", publicError(pageErr), publicError(publicErr), publicError(playerErr), publicError(nativeErr), apiErr)
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
@@ -255,8 +240,7 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 	if mapString(page, "vid") != videoID || mapString(page, "series_id") != seriesID {
 		// 锁定集会被 302 到试看集并在 URL 上带 pc_locked_episode=<原 vid>。
 		// 跟随重定向后 page.vid 会变成试看集；此处必须拦住，绝不能把试看集
-		// 的地址当成用户请求的那一集返回。同时把站点声明的游客可看集数带出，
-		// 让上层直接短路，避免再空跑 App 网关与已停用的备用线路。
+		// 的地址当成用户请求的那一集返回。上层会继续走公开回退和官方播放线路。
 		if strings.Contains(body, "pc_locked_episode") || hongguoAccessibleEpisodes(page) > 0 {
 			return providerMedia{}, &hongguoEpisodeLockedError{accessible: hongguoPublicEpisodeLimit}
 		}

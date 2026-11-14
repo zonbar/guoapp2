@@ -17,27 +17,31 @@ import (
 )
 
 type Config struct {
-	dataDir          string
-	MaxPagesPerSort  int
-	PageSize         int
-	Retries          int
-	InsecureTLS      bool
-	HuangguoAIURL    string
-	HuangguoVideoURL string
-	HuangdouURL      string
-	HongguoURL       string
-	HuangjuURL       string
-	HuangjuAPIURL    string
-	YeguoURL         string
-	YeguoAPIURL      string
-	DSDURL           string
-	Token            string
-	AESKeyHex        string
-	InterfaceKey     string
-	ParamKey         string
-	ParamIV          string
-	APIBase          string
-	CDNURL           string
+	dataDir             string
+	MaxPagesPerSort     int
+	PageSize            int
+	Retries             int
+	InsecureTLS         bool
+	HuangguoAIURL       string
+	HuangguoVideoURL    string
+	HuangdouURL         string
+	HongguoURL          string
+	HongguoRegisterURL  string
+	HongguoPlayerURL    string
+	HongguoPlayerAltURL string
+	HongguoShortplayURL string
+	HuangjuURL          string
+	HuangjuAPIURL       string
+	YeguoURL            string
+	YeguoAPIURL         string
+	DSDURL              string
+	Token               string
+	AESKeyHex           string
+	InterfaceKey        string
+	ParamKey            string
+	ParamIV             string
+	APIBase             string
+	CDNURL              string
 }
 
 type Downloader struct {
