@@ -400,7 +400,7 @@ exports/
 | 动漫与 AI 动漫 | 选用 Anime4K Upscale+Denoise CNN x2 S，使用 MAIN / RGB，限制输入、倍率和中间纹理预算；不使用强 Restore 或人脸生成模块。写实 AI 内容可手动选通用档，实际压缩域效果待验收 |
 | 输出与格式 | 以视频区域物理像素、源宽高比和旋转计算尺寸；Android / TV 输出最多 2073600 像素，Windows 最多 8294400 像素。未知色彩、HDR / 10-bit 保持原处理；MediaCodec 不公开像素格式时，只有明确 8-bit 的 H.264 / HEVC profile 且为 SDR 才尝试 RGB 增强 |
 | Android 适配 | 保持现有 GPU、硬解与 WID 生命周期；首次需要调整尺寸时接管固定版本插件的尺寸订阅，通过既有原生接口调整 Surface。关闭增强前未使用尺寸适配时，保留插件原有订阅 |
-| Windows 原生库 | 本项目 `packages/media_kit_libs_windows_video` 只维护原生库插件，保留上游 MIT 声明。固定通用 x64 `20260921 / e76a35ec95` libmpv 与 ANGLE 1.0.1，下载时校验 SHA256，在配置期解包以保证头文件与链接库先就绪；未强制切换 gpu-next |
+| Windows 原生库 | 本项目 `packages/media_kit_libs_windows_video` 只维护原生库插件，保留上游 MIT 声明。固定通用 x64 `20261111 / bcde6b93cc` libmpv 与 ANGLE 1.0.1；上游会滚动删除旧 release，因此另附三个已固定 SHA256 的候选地址，配置期逐个下载校验并解包，CI 还会缓存校验过的归档；未强制切换 gpu-next |
 | 硬件增强 | 仅清晰优先、通用内容、插电、实际 D3D11 硬解与对应 GL 渲染器、足够新的 mpv 和 8-bit 输入满足时尝试带独立标签的 VPP。滤镜与输出尺寸确认后仍提示驱动效果需看对比，未声称品牌相同就一定有效 |
 | 生效与恢复 | 检查真实输出尺寸、mpv 渲染尺寸和 Shader 最后阶段；半浮点纹理失败、无渲染 Pass 或原生属性返回错误会撤回本功能配置并降级，重复失败后停止本次自动尝试。图形错误独立处理，避免直接触发站源切线 |
 | 功耗与持续性能 | Android 读取省电、供电、低内存和热状态，headroom 最多每 10 秒读一次；Windows 读取供电、节电与内存。2 秒采样渲染耗时与丢帧，排除切集、seek、缓冲及倍速调度后，持续过载降档；温控和性能降档在本集内保持 |

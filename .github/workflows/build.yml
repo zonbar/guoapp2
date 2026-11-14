@@ -114,6 +114,14 @@ jobs:
             arguments: '--all-sources'
     steps:
       - uses: actions/checkout@v4
+      # 上游只保留最近若干次 libmpv 构建；缓存已校验过 SHA256 的归档，
+      # 即使固定的 release 之后被删除，CI 也不必重新依赖外部下载地址。
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/windows/x64/mpv-dev-*.7z
+            build/windows/x64/ANGLE-v1.0.1.7z
+          key: windows-native-${{ hashFiles('packages/media_kit_libs_windows_video/windows/CMakeLists.txt') }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: native/go.mod
